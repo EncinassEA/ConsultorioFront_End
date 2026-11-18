@@ -3,7 +3,7 @@
 </div>
 
 <div class="dashboard-wrapper">
-  
+
   <!-- ================= BARRA LATERAL ================= -->
   <nav class="sidebar">
     <div class="clinic-brand hidden-mobile">
@@ -13,7 +13,7 @@
       <h2>{{ configClinica.nombre }}</h2>
       <p>Panel de Administración</p>
     </div>
-    
+
     <ul class="nav-menu">
       <li [class.active]="activeTab === 'resumen'" (click)="cambiarPestana('resumen')"><span class="icon">📊</span><span class="label">Resumen</span></li>
       <li [class.active]="activeTab === 'citas'" (click)="cambiarPestana('citas')"><span class="icon">📅</span><span class="label">Agenda</span></li>
@@ -24,9 +24,15 @@
       <li [class.active]="activeTab === 'personal'" (click)="cambiarPestana('personal')"><span class="icon">👥</span><span class="label">Personal</span></li>
     </ul>
 
-    <div class="user-profile hidden-mobile">
-      <div class="avatar">RS</div>
-      <div class="info"><strong>{{ doctorActual.nombre }}</strong><span>{{ doctorActual.especialidad }}</span></div>
+    <div class="user-profile hidden-mobile" style="justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 0.8rem;">
+        <div class="avatar">{{ doctorActual.iniciales }}</div>
+        <div class="info">
+          <strong>{{ doctorActual.nombre }}</strong>
+          <span>{{ doctorActual.especialidad }}</span>
+        </div>
+      </div>
+      <button (click)="cerrarSesion()" title="Cerrar Sesión" style="background: none; border: none; color: #f87171; cursor: pointer; font-size: 1.2rem;">🚪</button>
     </div>
   </nav>
 
@@ -36,13 +42,15 @@
       <h1>
         <span *ngIf="activeTab === 'resumen'">Resumen del Día</span>
         <span *ngIf="activeTab === 'citas'">Agenda y Calendario</span>
-        <span *ngIf="activeTab === 'consulta'">Consulta Médica Activa</span>
-        <span *ngIf="activeTab === 'historial'">Historial Clínico</span>
-        <span *ngIf="activeTab === 'pacientes'">Directorio de Pacientes</span>
-        <span *ngIf="activeTab === 'inventario'">Control de Inventario</span>
-        <span *ngIf="activeTab === 'personal'">Personal Médico</span>
+        <span *ngIf="activeTab === 'consulta'">Consulta Médica y Expediente (NOM-004)</span>
+        <span *ngIf="activeTab === 'historial'">Historial Clínico (CIE-10)</span>
+        <span *ngIf="activeTab === 'pacientes'">Directorio y Expedientes de Pacientes</span>
+        <span *ngIf="activeTab === 'inventario'">Control de Inventario Médico</span>
+        <span *ngIf="activeTab === 'personal'">Personal Médico y Recepción</span>
       </h1>
-      <div class="actions"><button class="btn-sync">☁️ Sincronizado</button></div>
+      <div class="actions">
+        <button class="btn-sync" (click)="cargarDatosReales()" style="cursor: pointer;">☁️ Sincronizado (PostgreSQL)</button>
+      </div>
     </header>
 
     <div class="content-area">
@@ -52,42 +60,49 @@
         <div class="welcome-banner">
           <div class="welcome-text">
             <h2>¡Hola, {{ doctorActual.nombre }}! 👋</h2>
-            <p>Tienes <strong>{{ citasDeHoy.length }} citas programadas</strong> para hoy.</p>
+            <p>Tienes <strong>{{ citasDeHoy.length }} citas registradas</strong> para el día de hoy.</p>
           </div>
         </div>
-        
+
         <div class="stats-grid">
           <div class="stat-card"><div class="icon-bg blue">📅</div><div class="data"><h3>Citas Hoy</h3><h2>{{ citasDeHoy.length }}</h2></div></div>
           <div class="stat-card"><div class="icon-bg green">✅</div><div class="data"><h3>Atendidos Hoy</h3><h2>{{ consultasDeHoy }}</h2></div></div>
           <div class="stat-card"><div class="icon-bg red">⚠️</div><div class="data"><h3>Faltantes Inventario</h3><h2>{{ inventarioCritico }}</h2></div></div>
         </div>
-        
+
         <div class="recent-section">
           <h3>Próximas Citas (Hoy)</h3>
-          <div class="cita-item" *ngFor="let cita of citasDeHoy | slice:0:3">
+          <div class="cita-item" *ngFor="let cita of citasDeHoy">
             <div class="hora">{{ cita.fechaHoraSegura | date:'shortTime' }}</div>
-            <div class="detalle"><strong>{{ cita.pacienteNombre }}</strong><span class="telefono">{{ cita.motivo || 'Revisión' }}</span></div>
-            <div class="badge badge-yellow">{{ cita.estado }}</div>
+            <div class="detalle">
+              <strong>{{ cita.pacienteNombre }} <small style="color: #64748b;">({{ cita.curpPaciente || 'Sin CURP' }})</small></strong>
+              <span class="telefono">{{ cita.motivo }} — Dr(a). {{ cita.nombreDoctor }}</span>
+            </div>
+            <div class="badge" [ngClass]="{'badge-green': cita.estado === 'Completada', 'badge-yellow': cita.estado !== 'Completada'}">
+              {{ cita.estado }}
+            </div>
           </div>
-          <p *ngIf="!citasDeHoy.length" style="color: #64748b; padding: 1rem;">No hay citas hoy.</p>
+          <p *ngIf="!citasDeHoy.length" style="color: #64748b; padding: 1rem;">No hay citas programadas para hoy.</p>
         </div>
       </div>
 
       <!-- ================= VISTA 2: AGENDA Y CALENDARIO ================= -->
       <div *ngIf="activeTab === 'citas'" class="view-agenda fade-in" style="display: flex; gap: 1rem; height: 100%;">
-        
-        <!-- MINI CALENDARIO LATERAL -->
         <div class="agenda-sidebar" style="width: 300px; background: white; border-radius: 12px; padding: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); height: fit-content;">
           <h3 style="margin-bottom: 1rem; font-size: 1.1rem; color: #1e293b;">📅 Citas por Día</h3>
           <input type="date" class="form-input" style="width: 100%; margin-bottom: 1rem;" [value]="fechaFiltroAgenda" (change)="filtrarAgendaPorDia($any($event.target).value)">
-          <button class="btn-primary w-100" style="margin-bottom: 1.5rem;" (click)="mostrarModalCita = true">+ Agendar Cita</button>
-          
+          <button class="btn-primary w-100" style="margin-bottom: 1.5rem;" (click)="abrirModalAgendarCita()">+ Agendar Cita</button>
+
           <h4 style="color: #64748b; font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase;">Citas del {{ fechaFiltroAgenda | date:'shortDate' }}</h4>
           <div style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 400px; overflow-y: auto;">
             <div *ngFor="let cita of citasFiltradasAgenda" style="padding: 0.8rem; background: #f8fafc; border-radius: 8px; border-left: 4px solid #3b82f6;">
-              <strong style="display: block; color: #1e293b;">{{ cita.pacienteNombre }}</strong>
-              <span style="font-size: 0.85rem; color: #64748b;">🕒 {{ cita.fechaHoraSegura | date:'shortTime' }}</span>
-              <p style="margin: 0.2rem 0 0 0; font-size: 0.8rem; color: #334155;">{{ cita.motivo }}</p>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <strong style="color: #1e293b;">{{ cita.pacienteNombre }}</strong>
+                <span style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;" [style.background]="cita.estado === 'Completada' ? '#d1fae5' : '#fef3c7'">{{ cita.estado }}</span>
+              </div>
+              <span style="font-size: 0.85rem; color: #64748b;">🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} | {{ cita.nombreDoctor }}</span>
+              <p style="margin: 0.2rem 0 0.5rem 0; font-size: 0.8rem; color: #334155;">{{ cita.motivo }}</p>
+              <button *ngIf="cita.estado !== 'Completada'" class="btn-small" style="width: 100%; background: #eff6ff; color: #2563eb; font-weight: 600;" (click)="iniciarConsultaDesdeCita(cita)">🩺 Iniciar Consulta</button>
             </div>
             <p *ngIf="!citasFiltradasAgenda.length" style="color: #94a3b8; font-size: 0.9rem; text-align: center; padding: 1rem 0;">No hay citas este día.</p>
           </div>
@@ -96,18 +111,18 @@
         <div style="flex: 1; display: flex; flex-direction: column;">
           <div class="toolbar agenda-toolbar">
             <div class="month-controls" style="margin: 0 auto;">
-              <button class="nav-btn" (click)="mesAnterior()">Anterior</button>
-              <h3 style="min-width: 150px; text-align: center;">{{ mesActualTitulo }}</h3>
-              <button class="nav-btn" (click)="mesSiguiente()">Siguiente</button>
+              <button class="nav-btn" (click)="mesAnterior()">◀</button>
+              <h3 style="min-width: 170px; text-align: center;">{{ mesActualTitulo }}</h3>
+              <button class="nav-btn" (click)="mesSiguiente()">▶</button>
             </div>
           </div>
           <div class="calendar-container fade-in" style="flex: 1; min-height: 500px;">
             <div class="calendar-header"><div>DOM</div><div>LUN</div><div>MAR</div><div>MIÉ</div><div>JUE</div><div>VIE</div><div>SÁB</div></div>
             <div class="calendar-grid">
-              <div class="calendar-cell" *ngFor="let dia of diasCalendario" [ngClass]="{'inactive': dia.inactivo}">
+              <div class="calendar-cell" *ngFor="let dia of diasCalendario" [ngClass]="{'inactive': dia.inactivo}" (click)="!dia.inactivo && filtrarAgendaPorDia(dia.fechaCompleta)">
                 <span class="day-number" *ngIf="dia.numero">{{ dia.numero }}</span>
                 <div class="events-container">
-                  <div class="event-pill" *ngFor="let cita of dia.citas" style="background-color: #3b82f6;" title="{{cita.motivo}}">
+                  <div class="event-pill" *ngFor="let cita of dia.citas" [style.background-color]="cita.estado === 'Completada' ? '#10b981' : '#3b82f6'" title="{{cita.motivo}}">
                     <span class="time">{{ cita.fechaHoraSegura | date:'shortTime' }}</span> {{ cita.pacienteNombre }}
                   </div>
                 </div>
@@ -117,67 +132,192 @@
         </div>
       </div>
 
-      <!-- ================= VISTA 3: CONSULTA ================= -->
+      <!-- ================= VISTA 3: CONSULTA Y EXPEDIENTE CLÍNICO ================= -->
       <div *ngIf="activeTab === 'consulta'" class="view-consulta fade-in">
-        
+
         <div *ngIf="!pacienteEnConsulta" class="seleccion-paciente fade-in">
           <div class="toolbar" style="background: white; padding: 1rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
             <div style="display: flex; gap: 1rem; align-items: center; width: 100%;">
-              <strong style="color: #1e293b; min-width: max-content;">Buscar Paciente:</strong>
-              <input type="text" placeholder="🔍 Buscar por nombre..." class="form-input" style="flex: 1;">
-              <button class="btn-primary" (click)="iniciarConsultaEnBlanco()">+ Iniciar Nueva Consulta</button>
+              <strong style="color: #1e293b; min-width: max-content;">Seleccionar Paciente del Directorio:</strong>
+              <input type="text" [(ngModel)]="terminoBusquedaPaciente" (input)="filtrarPacientes()" placeholder="🔍 Buscar por nombre o CURP..." class="form-input" style="flex: 1;">
+              <button class="btn-primary" (click)="abrirModalNuevoPaciente()">+ Registrar Nuevo Paciente</button>
             </div>
           </div>
-          
-          <h3 style="color: #1e293b; margin-top: 2rem;">Pacientes Agendados para Hoy</h3>
-          <div class="pacientes-grid">
+
+          <h3 style="color: #1e293b; margin-top: 1.5rem;">Citas Programadas para Hoy</h3>
+          <div class="pacientes-grid" style="margin-bottom: 2rem;">
             <div class="paciente-card" *ngFor="let cita of citasDeHoy">
-              <div class="card-header"><div class="avatar">👤</div><div><h4>{{ cita.pacienteNombre }}</h4><p>Cita: {{ cita.fechaHoraSegura | date:'shortTime' }}</p></div></div>
-              <button class="btn-primary w-100" (click)="iniciarConsultaDesdeCita(cita)">Atender y Llenar Receta</button>
+              <div class="card-header">
+                <div class="avatar">👤</div>
+                <div>
+                  <h4>{{ cita.pacienteNombre }}</h4>
+                  <p>🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} — {{ cita.estado }}</p>
+                </div>
+              </div>
+              <p style="font-size: 0.9rem; color: #475569; margin-bottom: 1rem;"><strong>Motivo:</strong> {{ cita.motivo }}</p>
+              <button class="btn-primary w-100" (click)="iniciarConsultaDesdeCita(cita)">Atender Cita y Llenar Expediente</button>
             </div>
-            <p *ngIf="!citasDeHoy.length" style="color: #64748b;">No hay pacientes en sala de espera.</p>
+            <p *ngIf="!citasDeHoy.length" style="color: #64748b;">No hay citas programadas para hoy. Puedes elegir un paciente del directorio abajo:</p>
+          </div>
+
+          <h3 style="color: #1e293b;">Directorio General de Pacientes</h3>
+          <div class="pacientes-grid">
+            <div class="paciente-card" *ngFor="let pac of pacientesFiltrados">
+              <div class="card-header">
+                <div class="avatar">🗂️</div>
+                <div>
+                  <h4>{{ pac.nombreCompleto }}</h4>
+                  <p>CURP: {{ pac.curp }}</p>
+                </div>
+              </div>
+              <p style="font-size: 0.85rem; color: #dc2626; font-weight: bold;">⚠️ Alergias: {{ pac.alergias }}</p>
+              <button class="btn-outline w-100" (click)="iniciarConsultaDesdePaciente(pac)">Iniciar Consulta Directa</button>
+            </div>
           </div>
         </div>
 
+        <!-- HOJA DE CONSULTA ACTIVA Y RECETA IMPRIMIBLE -->
         <div *ngIf="pacienteEnConsulta" class="consulta-activa-layout fade-in">
           <div class="receta-actions no-print" style="margin-bottom: 1.5rem; display: flex; gap: 1rem;">
-            <button class="btn-outline" (click)="terminarConsulta()">← Regresar</button>
+            <button class="btn-outline" (click)="terminarConsulta()">← Cambiar Paciente</button>
             <div style="display: flex; gap: 0.5rem; margin-left: auto;">
-              <button class="btn-success" (click)="guardarConsulta(inputDiagnostico.value, inputReceta.value, inputProximaCita.value)">✅ Guardar Consulta</button>
+              <button class="btn-success" (click)="guardarConsultaCompleta()">✅ Guardar Expediente y Completar Cita</button>
               <button class="btn-primary" (click)="imprimirReceta()">🖨️ Imprimir Receta</button>
             </div>
           </div>
 
           <div class="consulta-workarea">
-            <div class="receta-document-wrapper" style="width: 100%;">
+            <!-- PANEL LATERAL IZQUIERDO: ANTECEDENTES DEL PACIENTE (SECCIÓN 1 Y 2 DEL DUEÑO) -->
+            <aside class="historial-lateral no-print">
+              <h3>📋 Antecedentes Clínicos</h3>
+              <div style="margin-bottom: 1rem; padding: 0.8rem; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 0.5rem;">
+                <strong style="color: #dc2626; font-size: 0.85rem; display: block;">🚨 ALERGIAS DESTACADAS:</strong>
+                <span style="color: #b91c1c; font-weight: 800; font-size: 1rem;">{{ pacienteEnConsulta.alergias || 'Ninguna' }}</span>
+              </div>
+
+              <div class="historial-section" style="margin-bottom: 1rem;">
+                <h4>Sección 1: Identificación</h4>
+                <ul>
+                  <li><strong>CURP:</strong> {{ pacienteEnConsulta.curp }}</li>
+                  <li><strong>Dirección:</strong> {{ pacienteEnConsulta.direccion || 'No registrada' }}</li>
+                  <li><strong>Emergencia:</strong> {{ pacienteEnConsulta.contactoEmergencia || 'No registrado' }}</li>
+                </ul>
+              </div>
+
+              <div class="historial-section" style="margin-bottom: 1rem;">
+                <h4>Sección 2: Antecedentes</h4>
+                <ul>
+                  <li><strong>Heredo-Familiares:</strong> {{ pacienteEnConsulta.antecedentesHeredoFamiliares || 'Negados' }}</li>
+                  <li><strong>Personales Patológicos:</strong> {{ pacienteEnConsulta.antecedentesPatologicos || 'Negados' }}</li>
+                  <li><strong>No Patológicos:</strong> {{ pacienteEnConsulta.antecedentesNoPatologicos || 'Negados' }}</li>
+                </ul>
+              </div>
+
+              <div class="historial-section">
+                <h4>Consultas Previas ({{ historialPacienteActual.length }})</h4>
+                <ul *ngIf="historialPacienteActual.length">
+                  <li *ngFor="let h of historialPacienteActual | slice:0:4" (click)="abrirDetalleConsulta(h)" style="cursor: pointer;">
+                    <strong>{{ h.fechaConsultaSegura | date:'shortDate' }}:</strong> {{ h.diagnostico }} ({{ h.codigoCIE10 }})
+                  </li>
+                </ul>
+                <p *ngIf="!historialPacienteActual.length" style="font-size: 0.8rem; color: #94a3b8;">Primera consulta del paciente.</p>
+              </div>
+            </aside>
+
+            <!-- DOCUMENTO DERECHO: NOTA MÉDICA Y RECETA -->
+            <div class="receta-document-wrapper">
               <div class="receta-document">
                 <div class="receta-header">
-                  <div class="logo-area"><h1 style="display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 2.5rem;">{{ configClinica.logo }}</span> {{ configClinica.nombre }}</h1><p>{{ configClinica.direccion }}</p><p>Tel: {{ configClinica.telefono }}</p></div>
-                  <div class="doctor-info"><h2>{{ doctorActual.nombre }}</h2><p>{{ doctorActual.especialidad }}</p><p>Fecha: <strong>{{ fechaHoy }}</strong></p></div>
+                  <div class="logo-area">
+                    <h1><span>{{ configClinica.logo }}</span> {{ configClinica.nombre }}</h1>
+                    <p>{{ configClinica.direccion }}</p>
+                    <p>Tel: {{ configClinica.telefono }}</p>
+                  </div>
+                  <div class="doctor-info">
+                    <h2>{{ doctorActual.nombre }}</h2>
+                    <p>{{ doctorActual.especialidad }}</p>
+                    <p>{{ doctorActual.cedula }}</p>
+                    <p>Fecha: <strong>{{ fechaHoy }}</strong></p>
+                  </div>
                 </div>
+
                 <hr class="divider">
+
+                <!-- DATOS DE IDENTIFICACIÓN EN LA RECETA -->
                 <div class="receta-patient-info">
-                  <div class="info-group flex-2"><label>Nombre Completo (Obligatorio):</label><input type="text" class="clean-input" [value]="pacienteEnConsulta.nombreCompleto" (input)="pacienteEnConsulta.nombreCompleto = $any($event.target).value"></div>
-                  <div class="info-group"><label>Fecha Nac.:</label><input type="date" class="clean-input text-center" [value]="pacienteEnConsulta.fechaNacimiento" (input)="pacienteEnConsulta.fechaNacimiento = $any($event.target).value"></div>
-                  <div class="info-group"><label>Edad (Oblig.):</label><input type="number" class="clean-input text-center" placeholder="Años" [value]="pacienteEnConsulta.edad" (input)="pacienteEnConsulta.edad = $any($event.target).value"></div>
-                  <div class="info-group"><label>Sexo (Oblig.):</label><input type="text" class="clean-input text-center" placeholder="H / M" [value]="pacienteEnConsulta.sexo" (input)="pacienteEnConsulta.sexo = $any($event.target).value"></div>
-                  <div class="info-group flex-1"><label>Teléfono (10 Dg):</label><input type="text" class="clean-input" placeholder="Ej: 6440001122" [value]="pacienteEnConsulta.telefono" (input)="pacienteEnConsulta.telefono = $any($event.target).value"></div>
+                  <div class="info-group flex-2"><label>Paciente:</label><input type="text" class="clean-input" [value]="pacienteEnConsulta.nombreCompleto" readonly></div>
+                  <div class="info-group"><label>CURP:</label><input type="text" class="clean-input text-center" [value]="pacienteEnConsulta.curp" readonly></div>
+                  <div class="info-group"><label>Edad:</label><input type="text" class="clean-input text-center" [value]="pacienteEnConsulta.edad + ' años'" readonly></div>
+                  <div class="info-group"><label>Sexo:</label><input type="text" class="clean-input text-center" [value]="pacienteEnConsulta.sexo" readonly></div>
                 </div>
+
                 <hr class="divider">
+
+                <!-- SECCIÓN 3, 4 Y 5: SIGNOS VITALES, EXPLORACIÓN, CIE-10 Y RECETA -->
                 <div class="receta-body">
                   <div class="vitals-column">
-                    <div class="vital-row"><label>Temp:</label><input type="text" class="line-input"></div>
-                    <div class="vital-row"><label>Peso:</label><input type="text" class="line-input"></div>
-                    <div class="vital-row" style="margin-top: 1rem;"><label>Alergias:</label><input type="text" class="line-input text-red font-bold" [value]="pacienteEnConsulta.alergias" (input)="pacienteEnConsulta.alergias = $any($event.target).value"></div>
+                    <h4 style="margin: 0; color: #1e293b; font-size: 0.9rem; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">Signos Vitales (S.V.)</h4>
+                    <div class="vital-row"><label>FC (lpm):</label><input type="text" class="line-input" [(ngModel)]="signosVitales.frecuenciaCardiaca" placeholder="80 lpm"></div>
+                    <div class="vital-row"><label>FR (rpm):</label><input type="text" class="line-input" [(ngModel)]="signosVitales.frecuenciaRespiratoria" placeholder="18 rpm"></div>
+                    <div class="vital-row"><label>Temp (°C):</label><input type="number" step="0.1" class="line-input" [(ngModel)]="signosVitales.temperatura" placeholder="36.5"></div>
+                    <div class="vital-row"><label>SatO2 (%):</label><input type="text" class="line-input" [(ngModel)]="signosVitales.saturacionOxigeno" placeholder="98%"></div>
+                    <div class="vital-row"><label>Peso (kg):</label><input type="number" step="0.1" class="line-input" [(ngModel)]="signosVitales.peso" (input)="calcularIMC()" placeholder="75.0"></div>
+                    <div class="vital-row"><label>Talla (m):</label><input type="number" step="0.01" class="line-input" [(ngModel)]="signosVitales.talla" (input)="calcularIMC()" placeholder="1.75"></div>
+                    <div class="vital-row"><label>IMC:</label><input type="number" class="line-input font-bold" [ngModel]="signosVitales.imc" readonly placeholder="Auto"></div>
+                    <div class="vital-row" style="margin-top: 0.5rem;">
+                      <label style="color: #dc2626;">Alergias:</label>
+                      <input type="text" class="line-input text-red font-bold" [(ngModel)]="pacienteEnConsulta.alergias">
+                    </div>
                   </div>
+
                   <div class="treatment-column">
-                    <div class="treatment-section"><label style="font-size: 1rem; color: #1e293b;">Diagnóstico:</label><textarea #inputDiagnostico class="clean-textarea medium-area"></textarea></div>
-                    <div class="treatment-section"><h3 style="margin-top: 1rem; border-bottom: 1px solid black; display: inline-block;">RECETA MÉDICA</h3><textarea #inputReceta class="clean-textarea large-area"></textarea></div>
+                    <div class="treatment-section no-print">
+                      <label>Sección 3 — Motivo de la Consulta (Padecimiento Actual):</label>
+                      <input type="text" class="clean-input" [(ngModel)]="signosVitales.motivoConsulta" placeholder="Describa el motivo de la consulta...">
+                    </div>
+
+                    <div class="treatment-section no-print">
+                      <label>Sección 4 — Exploración Física (Hallazgos clínicos):</label>
+                      <textarea class="clean-textarea auto-resize" [(ngModel)]="signosVitales.exploracionFisica" placeholder="Paciente consciente, orientado, hidratado..."></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 1rem;">
+                      <div class="treatment-section" style="flex: 3;">
+                        <label>Sección 5 — Diagnóstico Clínico:</label>
+                        <input type="text" class="clean-input font-bold" [(ngModel)]="signosVitales.diagnostico" placeholder="Ej. Faringoamigdalitis aguda">
+                      </div>
+                      <div class="treatment-section" style="flex: 1;">
+                        <label>Código CIE-10:</label>
+                        <input type="text" class="clean-input text-center font-bold" [(ngModel)]="signosVitales.codigoCIE10" placeholder="Ej. J03.9">
+                      </div>
+                    </div>
+
+                    <div class="treatment-section">
+                      <label>Plan Terapéutico e Indicaciones:</label>
+                      <textarea class="clean-textarea auto-resize" [(ngModel)]="signosVitales.planTerapeutico" placeholder="Reposo, dieta, cuidados generales..."></textarea>
+                    </div>
+
+                    <div class="treatment-section">
+                      <h3 style="margin: 0.5rem 0 0 0; border-bottom: 1px solid black; display: inline-block; font-size: 1rem;">Rp. RECETA DE MEDICAMENTOS ACTIVOS</h3>
+                      <textarea class="clean-textarea medium-area" [(ngModel)]="signosVitales.recetaMedicamentos" placeholder="1. Medicamento, dosis, vía de administración y periodicidad..."></textarea>
+                    </div>
+
+                    <div class="treatment-section">
+                      <label>Estudios Auxiliares Solicitados:</label>
+                      <input type="text" class="clean-input" [(ngModel)]="signosVitales.estudiosAuxiliares" placeholder=" Biometría hemática, Rayos X, o Ninguno">
+                    </div>
                   </div>
                 </div>
+
                 <div class="receta-footer">
-                  <div class="footer-left"><label>Próxima cita (Se agenda automático):</label><input #inputProximaCita type="date" class="line-input" style="font-family: inherit; font-size: 1rem;"></div>
-                  <div class="footer-right signature-area"><hr><p>Firma del Médico</p></div>
+                  <div class="footer-left no-print">
+                    <label>Próxima cita (Se agenda automático):</label>
+                    <input type="date" class="line-input" style="width: auto;" [(ngModel)]="signosVitales.fechaProximaCita">
+                  </div>
+                  <div class="footer-right signature-area" style="margin-left: auto;">
+                    <hr>
+                    <p>{{ doctorActual.nombre }} — Firma</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -189,24 +329,36 @@
       <div *ngIf="activeTab === 'historial'" class="view-historial fade-in">
         <div class="toolbar">
           <div style="display: flex; gap: 1rem; align-items: center;">
-            <label style="font-weight: 600;">Filtrar Día:</label>
+            <label style="font-weight: 600;">Filtrar por Fecha:</label>
             <input #filtroFecha type="date" class="form-input" style="width: auto;" (change)="filtrarHistorial(filtroFecha.value)">
             <button class="btn-outline" (click)="filtroFecha.value = ''; filtrarHistorial('')">Mostrar Todas</button>
           </div>
-          <button class="btn-outline">⬇️ Exportar CSV</button>
+          <button class="btn-outline" (click)="exportarHistorialCSV()">⬇️ Exportar CSV</button>
         </div>
-        
+
         <div class="recent-section" style="padding: 0; overflow: hidden;">
           <table class="data-table">
-            <thead><tr><th>Fecha</th><th>Paciente Atendido</th><th>Diagnóstico</th><th>Acciones</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Paciente Atendido</th>
+                <th>Médico</th>
+                <th>Diagnóstico (CIE-10)</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
             <tbody>
               <tr *ngFor="let con of consultasFiltradas">
                 <td><strong>{{ con.fechaConsultaSegura | date:'shortDate' }}</strong></td>
                 <td><strong>{{ con.pacienteNombre }}</strong></td>
-                <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span style="color: #be123c; font-weight: 600;">{{ con.diagnostico || 'Sin diagnóstico' }}</span></td>
-                <td><button class="btn-detalle" (click)="abrirDetalleConsulta(con)">🔍 Ver Detalle</button></td>
+                <td>{{ con.nombreDoctor || doctorActual.nombre }}</td>
+                <td>
+                  <span style="color: #be123c; font-weight: 600;">{{ con.diagnostico }}</span>
+                  <span *ngIf="con.codigoCIE10" style="margin-left: 6px; background: #e0e7ff; color: #1d4ed8; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold;">{{ con.codigoCIE10 }}</span>
+                </td>
+                <td><button class="btn-small" style="background: #2563eb; color: white; font-weight: 600;" (click)="abrirDetalleConsulta(con)">🔍 Ver Expediente</button></td>
               </tr>
-              <tr *ngIf="!consultasFiltradas.length"><td colspan="4" style="text-align:center; padding: 2rem;">No hay consultas registradas.</td></tr>
+              <tr *ngIf="!consultasFiltradas.length"><td colspan="5" style="text-align:center; padding: 2rem;">No hay consultas registradas.</td></tr>
             </tbody>
           </table>
         </div>
@@ -215,19 +367,29 @@
       <!-- ================= VISTA 5: PACIENTES ================= -->
       <div *ngIf="activeTab === 'pacientes'" class="view-pacientes fade-in">
         <div class="toolbar" style="justify-content: space-between;">
-          <input type="text" placeholder="Buscar paciente..." class="search-input" style="max-width: 400px;">
-          <button class="btn-primary" (click)="abrirModalNuevoPaciente()">+ Nuevo Paciente</button>
+          <input type="text" [(ngModel)]="terminoBusquedaPaciente" (input)="filtrarPacientes()" placeholder="🔍 Buscar por nombre, apellidos, CURP o teléfono..." class="search-input" style="max-width: 450px; width: 100%;">
+          <button class="btn-primary" (click)="abrirModalNuevoPaciente()">+ Nuevo Expediente de Paciente</button>
         </div>
         <div class="pacientes-grid">
-          <div class="paciente-card" *ngFor="let paciente of directorioPacientes">
-            <div class="card-header"><div class="avatar">👤</div><div><h4>{{ paciente.nombreCompleto }}</h4><p>📞 {{ paciente.telefono }}</p></div></div>
+          <div class="paciente-card" *ngFor="let paciente of pacientesFiltrados">
+            <div class="card-header">
+              <div class="avatar">👤</div>
+              <div>
+                <h4>{{ paciente.nombreCompleto }}</h4>
+                <p>🆔 CURP: <strong>{{ paciente.curp }}</strong> | 📞 {{ paciente.telefono || 'S/N' }}</p>
+              </div>
+            </div>
             <div class="card-body">
-              <p><strong>Alergias:</strong> <span [ngClass]="{'text-red': paciente.alergias !== 'Ninguna'}">{{ paciente.alergias }}</span></p>
-              <p><strong>Sexo:</strong> {{ paciente.sexo }} | <strong>Fecha Nac.:</strong> {{ paciente.fechaNacimiento || 'N/A' }} | <strong>Edad:</strong> {{ paciente.edad }}</p>
+              <p><strong>🚨 Alergias:</strong> <span [ngClass]="{'text-red': paciente.alergias && paciente.alergias !== 'Ninguna'}">{{ paciente.alergias }}</span></p>
+              <p><strong>Sexo:</strong> {{ paciente.sexo }} | <strong>Edad:</strong> {{ paciente.edad }} años</p>
+              <p><strong>Ant. Heredo-Fam:</strong> {{ paciente.antecedentesHeredoFamiliares || 'Negados' }}</p>
+              <p><strong>Ant. Patológicos:</strong> {{ paciente.antecedentesPatologicos || 'Negados' }}</p>
+              <p><strong>Emergencia:</strong> {{ paciente.contactoEmergencia || 'No especificado' }}</p>
             </div>
             <div style="display:flex; gap:0.5rem; margin-top: 1rem;">
-              <button class="btn-outline w-100" style="padding: 0.3rem;" (click)="abrirModalEditarPaciente(paciente)">Editar</button>
-              <button class="btn-outline w-100" style="padding: 0.3rem; color: #dc2626; border-color: #fca5a5;" (click)="borrarPaciente(paciente.id)">Eliminar</button>
+              <button class="btn-primary w-100" style="padding: 0.4rem;" (click)="iniciarConsultaDesdePaciente(paciente)">🩺 Consultar</button>
+              <button class="btn-outline w-100" style="padding: 0.4rem; margin-top: 0;" (click)="abrirModalEditarPaciente(paciente)">Editar</button>
+              <button class="btn-outline" style="padding: 0.4rem 0.8rem; margin-top: 0; color: #dc2626; border-color: #fca5a5;" (click)="borrarPaciente(paciente.id)">🗑️</button>
             </div>
           </div>
         </div>
@@ -236,19 +398,16 @@
       <!-- ================= VISTA 6: INVENTARIO ================= -->
       <div *ngIf="activeTab === 'inventario'" class="view-inventario fade-in">
         <div class="toolbar">
-          
-          <!-- BUSCADOR Y ORDENAMIENTO INVENTARIO -->
           <div style="display: flex; gap: 1rem; align-items: center;">
-            <input type="text" placeholder="Buscar producto..." class="search-input" (input)="buscarInventario($event)">
+            <input type="text" placeholder="Buscar insumo..." class="search-input" (input)="buscarInventario($event)">
             <select class="form-input" style="width: auto; padding: 0.5rem;" (change)="ordenarInventario($event)">
               <option value="defecto">Ordenar por...</option>
-              <option value="mayor">Mayor a Menor</option>
-              <option value="menor">Menor a Mayor</option>
-              <option value="critico">Mostrar Críticos</option>
+              <option value="mayor">Mayor a Menor stock</option>
+              <option value="menor">Menor a Mayor stock</option>
+              <option value="critico">Mostrar Críticos primero</option>
             </select>
           </div>
-
-          <button class="btn-primary" (click)="abrirModalNuevoProducto()">+ Agregar Producto</button>
+          <button class="btn-primary" (click)="abrirModalNuevoProducto()">+ Agregar Insumo</button>
         </div>
 
         <div class="inventory-grid">
@@ -257,13 +416,40 @@
             <div class="card-body">
               <h2 class="qty">{{ item.cantidad }} <small>{{ item.unidad }}</small></h2>
               <p class="status" [class.alert]="item.estado === 'Crítico'">Estado: {{ item.estado }}</p>
+              <small *ngIf="item.fechaCaducidad" style="color: #64748b;">Caducidad: {{ item.fechaCaducidad | date:'shortDate' }}</small>
             </div>
             <div class="card-actions">
               <button class="btn-small" (click)="abrirModalEditarProducto(item)">Editar</button>
               <button class="btn-small" style="color: #dc2626;" (click)="borrarProducto(item.id)">Borrar</button>
             </div>
           </div>
-          <p *ngIf="!inventarioFiltrado.length" style="color: #64748b; margin-top: 2rem;">No hay productos que coincidan.</p>
+          <p *ngIf="!inventarioFiltrado.length" style="color: #64748b; margin-top: 2rem;">No hay insumos registrados en el inventario.</p>
+        </div>
+      </div>
+
+      <!-- ================= VISTA 7: PERSONAL MÉDICO (/api/Usuarios) ================= -->
+      <div *ngIf="activeTab === 'personal'" class="view-personal fade-in">
+        <div class="toolbar" style="justify-content: space-between;">
+          <h3 style="margin: 0; color: #475569;">Especialistas y Recepcionistas Activos ({{ listaPersonal.length }})</h3>
+          <button class="btn-primary" (click)="abrirModalNuevoPersonal()">+ Registrar Personal (BCrypt)</button>
+        </div>
+
+        <div class="staff-list">
+          <div class="staff-card" *ngFor="let user of listaPersonal">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+              <div style="width: 48px; height: 48px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem;">
+                {{ user.rol === 'Doctor' ? '👨‍⚕️' : '💼' }}
+              </div>
+              <div>
+                <h4 style="margin: 0; font-size: 1.1rem; color: #1e293b;">{{ user.nombre }}</h4>
+                <span style="font-size: 0.8rem; background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 1rem; font-weight: 600;">{{ user.rol }}</span>
+              </div>
+            </div>
+            <p style="margin: 0.3rem 0; font-size: 0.9rem; color: #475569;">📧 {{ user.correo }}</p>
+            <p style="margin: 0.3rem 0; font-size: 0.9rem; color: #475569;">📞 {{ user.telefono || 'Sin teléfono' }}</p>
+            <p *ngIf="user.estudios" style="margin: 0.3rem 0; font-size: 0.9rem; color: #475569;">🎓 {{ user.estudios }}</p>
+            <p *ngIf="user.cedulaProfesional" style="margin: 0.3rem 0; font-size: 0.85rem; color: #059669; font-weight: 600;">Cédula: {{ user.cedulaProfesional }}</p>
+          </div>
         </div>
       </div>
 
@@ -272,17 +458,60 @@
 
   <!-- ================= MODALES ================= -->
 
-  <!-- MODAL: VER DETALLE -->
+  <!-- MODAL: VER DETALLE DE CONSULTA (COMPLETO) -->
   <div class="modal-overlay" *ngIf="mostrarModalDetalleConsulta">
-    <div class="modal-content fade-in-fast" style="max-width: 600px;">
-      <div class="modal-header"><h2>Detalle de Consulta</h2><button class="close-btn" (click)="mostrarModalDetalleConsulta = false">✖</button></div>
+    <div class="modal-content fade-in-fast" style="max-width: 650px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2>Expediente de Consulta Médica</h2>
+        <button class="close-btn" (click)="mostrarModalDetalleConsulta = false">✖</button>
+      </div>
       <div class="modal-body" *ngIf="consultaSeleccionada">
-        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 1rem; margin-bottom: 1rem;">
-          <div><p style="color: #64748b; font-size: 0.85rem; margin: 0;">Paciente</p><h3 style="margin: 0; color: #1e293b;">{{ consultaSeleccionada.pacienteNombre }}</h3></div>
-          <div style="text-align: right;"><p style="color: #64748b; font-size: 0.85rem; margin: 0;">Fecha</p><h4 style="margin: 0; color: #1e293b;">{{ consultaSeleccionada.fechaConsultaSegura | date:'mediumDate' }}</h4></div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.8rem; margin-bottom: 1rem;">
+          <div>
+            <p style="color: #64748b; font-size: 0.8rem; margin: 0;">Paciente</p>
+            <h3 style="margin: 0; color: #1e293b;">{{ consultaSeleccionada.pacienteNombre }}</h3>
+            <small style="color: #475569;">Atendió: {{ consultaSeleccionada.nombreDoctor }}</small>
+          </div>
+          <div style="text-align: right;">
+            <p style="color: #64748b; font-size: 0.8rem; margin: 0;">Fecha</p>
+            <h4 style="margin: 0; color: #1e293b;">{{ consultaSeleccionada.fechaConsultaSegura | date:'medium' }}</h4>
+          </div>
         </div>
-        <div style="margin-bottom: 1.5rem;"><label style="font-weight: 600; color: #0369a1;">Diagnóstico:</label><div style="background: #f8fafc; padding: 1rem; border-radius: 0.5rem; margin-top: 0.5rem; white-space: pre-wrap; color: #334155;">{{ consultaSeleccionada.diagnostico || 'Sin registro.' }}</div></div>
-        <div style="margin-bottom: 1.5rem;"><label style="font-weight: 600; color: #10b981;">Tratamiento y Receta:</label><div style="background: #f8fafc; padding: 1rem; border-radius: 0.5rem; margin-top: 0.5rem; white-space: pre-wrap; color: #334155;">{{ consultaSeleccionada.recetaMedica || consultaSeleccionada.recetamedica || 'Sin receta.' }}</div></div>
+
+        <!-- Resumen de Signos Vitales -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; background: #f8fafc; padding: 0.8rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem;">
+          <div><strong>FC:</strong> {{ consultaSeleccionada.frecuenciaCardiaca || 'N/A' }}</div>
+          <div><strong>FR:</strong> {{ consultaSeleccionada.frecuenciaRespiratoria || 'N/A' }}</div>
+          <div><strong>Temp:</strong> {{ consultaSeleccionada.temperatura ? consultaSeleccionada.temperatura + ' °C' : 'N/A' }}</div>
+          <div><strong>SatO2:</strong> {{ consultaSeleccionada.saturacionOxigeno || 'N/A' }}</div>
+          <div><strong>Peso:</strong> {{ consultaSeleccionada.peso ? consultaSeleccionada.peso + ' kg' : 'N/A' }}</div>
+          <div><strong>Talla:</strong> {{ consultaSeleccionada.talla ? consultaSeleccionada.talla + ' m' : 'N/A' }}</div>
+          <div><strong>IMC:</strong> {{ consultaSeleccionada.imc || 'N/A' }}</div>
+          <div><strong>CIE-10:</strong> <span style="color: #2563eb; font-weight: bold;"> {{ consultaSeleccionada.codigoCIE10 || 'N/A' }}</span></div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="font-weight: 600; color: #475569;">Motivo y Exploración Física:</label>
+          <div style="background: #f8fafc; padding: 0.8rem; border-radius: 0.5rem; margin-top: 0.3rem; color: #334155; font-size: 0.9rem;">
+            <strong>Motivo:</strong> {{ consultaSeleccionada.motivoConsulta }}<br>
+            <strong>Exploración:</strong> {{ consultaSeleccionada.exploracionFisica || 'Sin observaciones.' }}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="font-weight: 600; color: #0369a1;">Diagnóstico y Plan Terapéutico:</label>
+          <div style="background: #f0f9ff; padding: 0.8rem; border-radius: 0.5rem; margin-top: 0.3rem; color: #0c4a6e; font-size: 0.9rem;">
+            <strong>{{ consultaSeleccionada.diagnostico }} ({{ consultaSeleccionada.codigoCIE10 }})</strong><br>
+            {{ consultaSeleccionada.planTerapeutico }}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="font-weight: 600; color: #059669;">Receta de Medicamentos y Estudios:</label>
+          <div style="background: #ecfdf5; padding: 0.8rem; border-radius: 0.5rem; margin-top: 0.3rem; white-space: pre-wrap; color: #065f46; font-size: 0.9rem;">{{ consultaSeleccionada.recetaMedicamentos || 'Sin medicamentos recetados.' }}</div>
+          <small *ngIf="consultaSeleccionada.estudiosAuxiliares" style="display: block; margin-top: 0.4rem; color: #475569;"><strong>Estudios solicitados:</strong> {{ consultaSeleccionada.estudiosAuxiliares }}</small>
+        </div>
+
         <button class="btn-outline w-100" (click)="mostrarModalDetalleConsulta = false">Cerrar</button>
       </div>
     </div>
@@ -294,7 +523,7 @@
       <div class="modal-header"><h2>Ajustes de la Clínica</h2><button class="close-btn" (click)="mostrarModalConfig = false">✖</button></div>
       <div class="modal-body">
         <div class="form-group"><label>Nombre</label><input #cnombre type="text" class="form-input" [value]="configClinica.nombre"></div>
-        <div class="form-group"><label>Logo</label><input #clogo type="text" class="form-input" [value]="configClinica.logo"></div>
+        <div class="form-group"><label>Logo (Emoji)</label><input #clogo type="text" class="form-input" [value]="configClinica.logo"></div>
         <div class="form-group"><label>Dirección</label><input #cdir type="text" class="form-input" [value]="configClinica.direccion"></div>
         <div class="form-group"><label>Teléfono</label><input #ctel type="text" class="form-input" [value]="configClinica.telefono"></div>
         <button class="btn-primary w-100" (click)="guardarConfiguracionClinica(cnombre.value, clogo.value, cdir.value, ctel.value)">Guardar</button>
@@ -302,39 +531,78 @@
     </div>
   </div>
 
-  <!-- MODAL: AGENDAR CITA MANUAL -->
+  <!-- MODAL: AGENDAR CITA -->
   <div class="modal-overlay" *ngIf="mostrarModalCita">
     <div class="modal-content fade-in-fast">
-      <div class="modal-header"><h2>Agendar Cita</h2><button class="close-btn" (click)="cerrarModalCita()">✖</button></div>
+      <div class="modal-header"><h2>Agendar Nueva Cita</h2><button class="close-btn" (click)="cerrarModalCita()">✖</button></div>
       <div class="modal-body">
-        <div class="form-group"><label>Fecha</label><input #ifecha type="date" class="form-input" [value]="fechaFiltroAgenda"></div>
-        <div class="form-group"><label>Paciente</label><input #inputNombreCita type="text" class="form-input" placeholder="Nombre completo"></div>
-        <div class="form-group"><label>Motivo</label><input #inputMotivoCita type="text" class="form-input" placeholder="Ej. Dolor de cabeza"></div>
-        <button class="btn-primary w-100" (click)="guardarNuevaCita(inputNombreCita.value, inputMotivoCita.value, ifecha.value)">Agendar</button>
+        <div class="form-group">
+          <label>Seleccionar Paciente</label>
+          <select class="form-input" [(ngModel)]="nuevaCitaForm.pacienteId">
+            <option *ngFor="let p of directorioPacientes" [value]="p.id">{{ p.nombreCompleto }} ({{ p.curp }})</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Médico Asignado</label>
+          <select class="form-input" [(ngModel)]="nuevaCitaForm.doctorId">
+            <option *ngFor="let d of listaDoctores" [value]="d.id">{{ d.nombre }} ({{ d.rol }})</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1;"><label>Fecha</label><input type="date" class="form-input" [(ngModel)]="nuevaCitaForm.fecha"></div>
+          <div class="form-group" style="flex: 1;"><label>Hora</label><input type="time" class="form-input" [(ngModel)]="nuevaCitaForm.hora"></div>
+        </div>
+        <div class="form-group"><label>Motivo de Consulta</label><input type="text" class="form-input" [(ngModel)]="nuevaCitaForm.motivoConsulta" placeholder="Ej. Dolor abdominal / Revisión"></div>
+        <div class="form-group"><label>Notas de Recepción</label><input type="text" class="form-input" [(ngModel)]="nuevaCitaForm.notasRecepcion" placeholder="Opcional"></div>
+        <button class="btn-primary w-100" (click)="guardarNuevaCita()">Confirmar Cita</button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL: PACIENTE MANUAL / EDITAR -->
+  <!-- MODAL: PACIENTE (IDENTIFICACIÓN, SECCIÓN 1 Y SECCIÓN 2 DEL DUEÑO) -->
   <div class="modal-overlay" *ngIf="mostrarModalPaciente">
-    <div class="modal-content fade-in-fast" style="max-width: 500px;">
-      <div class="modal-header"><h2>{{ pacienteEditando.id ? 'Editar Paciente' : 'Registrar Paciente' }}</h2><button class="close-btn" (click)="mostrarModalPaciente = false">✖</button></div>
+    <div class="modal-content fade-in-fast" style="max-width: 620px; max-height: 92vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2>{{ pacienteEditando.id ? 'Editar Expediente del Paciente' : 'Nuevo Expediente Clínico' }}</h2>
+        <button class="close-btn" (click)="mostrarModalPaciente = false">✖</button>
+      </div>
       <div class="modal-body">
+        <h4 style="margin: 0 0 0.8rem 0; color: #2563eb; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">Identificación del Paciente</h4>
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1;"><label>Nombre(s) *</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.nombre" placeholder="Ej. Carlos"></div>
+          <div class="form-group" style="flex: 1;"><label>Apellidos *</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.apellidos" placeholder="Ej. Gómez Ramírez"></div>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1.5;"><label>CURP (18 caracteres) *</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.curp" placeholder="GORC850512HSRRMR01"></div>
+          <div class="form-group" style="flex: 1;">
+            <label>Sexo *</label>
+            <select class="form-input" [(ngModel)]="pacienteEditando.sexo">
+              <option value="Masculino">Masculino</option>
+              <option value="Femenino">Femenino</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;"><label>Fecha Nacimiento</label><input type="date" class="form-input" [(ngModel)]="pacienteEditando.fechaNacimiento"></div>
+        </div>
+
+        <h4 style="margin: 0.5rem 0 0.8rem 0; color: #2563eb; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">Sección 1: Contacto y Emergencia</h4>
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1;"><label>Teléfono (10 dígitos)</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.telefono" placeholder="6441112233"></div>
+          <div class="form-group" style="flex: 1.5;"><label>Contacto de Emergencia</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.contactoEmergencia" placeholder="Nombre (Parentesco) - Teléfono"></div>
+        </div>
+        <div class="form-group"><label>Dirección Completa</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.direccion" placeholder="Calle, Número, Colonia, Ciudad"></div>
+
+        <h4 style="margin: 0.5rem 0 0.8rem 0; color: #2563eb; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">Sección 2: Antecedentes Médicos</h4>
         <div class="form-group">
-          <label>Nombre Completo</label>
-          <input type="text" class="form-input" [value]="pacienteEditando.nombreCompleto || ''" (input)="pacienteEditando.nombreCompleto = $any($event.target).value">
+          <label style="color: #dc2626; font-weight: 700;">🚨 Alergias (Se destacarán en rojo)</label>
+          <input type="text" class="form-input" style="border-color: #fca5a5; background: #fef2f2;" [(ngModel)]="pacienteEditando.alergias" placeholder="Ej. Penicilina, AINEs o Ninguna">
         </div>
-        
-        <div style="display: flex; gap: 1rem; margin-bottom: 1.2rem;">
-          <div style="flex: 1;"><label style="display: block; font-size: 0.85rem; font-weight: 600;">Teléfono</label><input type="text" class="form-input" style="width: 100%;" [value]="pacienteEditando.telefono || ''" (input)="pacienteEditando.telefono = $any($event.target).value"></div>
-          <div style="flex: 1;"><label style="display: block; font-size: 0.85rem; font-weight: 600;">Fecha Nac.</label><input type="date" class="form-input" style="width: 100%;" [value]="pacienteEditando.fechaNacimiento || ''" (input)="pacienteEditando.fechaNacimiento = $any($event.target).value"></div>
-        </div>
-        <div style="display: flex; gap: 1rem; margin-bottom: 1.2rem;">
-          <div style="flex: 1;"><label style="display: block; font-size: 0.85rem; font-weight: 600;">Edad</label><input type="number" class="form-input" style="width: 100%;" [value]="pacienteEditando.edad || ''" (input)="pacienteEditando.edad = $any($event.target).value"></div>
-          <div style="flex: 1;"><label style="display: block; font-size: 0.85rem; font-weight: 600;">Sexo</label><input type="text" class="form-input" style="width: 100%;" placeholder="H / M" [value]="pacienteEditando.sexo || ''" (input)="pacienteEditando.sexo = $any($event.target).value"></div>
-        </div>
-        <div class="form-group"><label>Alergias</label><input type="text" class="form-input" [value]="pacienteEditando.alergias || ''" (input)="pacienteEditando.alergias = $any($event.target).value"></div>
-        <button class="btn-primary w-100" style="padding: 1rem;" (click)="guardarPacienteManual()">{{ pacienteEditando.id ? 'Actualizar Paciente' : 'Guardar Paciente' }}</button>
+        <div class="form-group"><label>Antecedentes Heredo-Familiares (Diabetes, Hipertensión, etc.)</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.antecedentesHeredoFamiliares" placeholder="Ej. Madre con Diabetes Mellitus Tipo 2"></div>
+        <div class="form-group"><label>Antecedentes Personales Patológicos (Cirugías, hospitalizaciones)</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.antecedentesPatologicos" placeholder="Ej. Apendicectomía en 2018"></div>
+        <div class="form-group"><label>Antecedentes No Patológicos (Tabaquismo, alcohol, hábitos)</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.antecedentesNoPatologicos" placeholder="Ej. Tabaquismo negado, actividad física regular"></div>
+
+        <button class="btn-primary w-100" style="padding: 1rem;" (click)="guardarPacienteManual()">
+          {{ pacienteEditando.id ? 'Actualizar Expediente en PostgreSQL' : 'Guardar Expediente en PostgreSQL' }}
+        </button>
       </div>
     </div>
   </div>
@@ -342,17 +610,40 @@
   <!-- MODAL: INVENTARIO (NUEVO / EDITAR) -->
   <div class="modal-overlay" *ngIf="mostrarModalInventario">
     <div class="modal-content fade-in-fast">
-      <div class="modal-header"><h2>{{ productoEditando.id ? 'Editar Producto' : 'Agregar al Inventario' }}</h2><button class="close-btn" (click)="cerrarModalInventario()">✖</button></div>
+      <div class="modal-header"><h2>{{ productoEditando.id ? 'Editar Insumo' : 'Agregar al Inventario' }}</h2><button class="close-btn" (click)="cerrarModalInventario()">✖</button></div>
       <div class="modal-body">
-        <div class="form-group">
-          <label>Insumo</label>
-          <input type="text" class="form-input" placeholder="Ej: Gasas" [value]="productoEditando.nombreProducto" (input)="productoEditando.nombreProducto = $any($event.target).value">
+        <div class="form-group"><label>Nombre del Insumo o Medicamento</label><input type="text" class="form-input" [(ngModel)]="productoEditando.nombre" placeholder="Ej: Gasas Estériles / Paracetamol 500mg"></div>
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1;"><label>Cantidad</label><input type="number" class="form-input" [(ngModel)]="productoEditando.cantidad" placeholder="50"></div>
+          <div class="form-group" style="flex: 1;"><label>Unidad de Medida</label><input type="text" class="form-input" [(ngModel)]="productoEditando.unidadMedida" placeholder="Cajas / Piezas"></div>
         </div>
-        <div class="form-group">
-          <label>Cantidad</label>
-          <input type="number" class="form-input" placeholder="Ej: 50" [value]="productoEditando.cantidad" (input)="productoEditando.cantidad = $any($event.target).value">
+        <div class="form-group"><label>Fecha de Caducidad</label><input type="date" class="form-input" [(ngModel)]="productoEditando.fechaCaducidad"></div>
+        <button class="btn-primary w-100" (click)="guardarProductoManual()">{{ productoEditando.id ? 'Actualizar Insumo' : 'Guardar Insumo' }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO PERSONAL MÉDICO -->
+  <div class="modal-overlay" *ngIf="mostrarModalPersonal">
+    <div class="modal-content fade-in-fast">
+      <div class="modal-header"><h2>Registrar Personal Clínico</h2><button class="close-btn" (click)="mostrarModalPersonal = false">✖</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Nombre Completo *</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.nombre" placeholder="Dr. Roberto Sánchez"></div>
+        <div class="form-group"><label>Correo Electrónico (Login) *</label><input type="email" class="form-input" [(ngModel)]="nuevoPersonal.correo" placeholder="roberto@clinica.com"></div>
+        <div class="form-group"><label>Contraseña (Se encriptará con BCrypt) *</label><input type="password" class="form-input" [(ngModel)]="nuevoPersonal.passwordHash" placeholder="••••••••"></div>
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1;">
+            <label>Rol</label>
+            <select class="form-input" [(ngModel)]="nuevoPersonal.rol">
+              <option value="Doctor">Doctor</option>
+              <option value="Recepcionista">Recepcionista</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;"><label>Teléfono</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.telefono" placeholder="6441234567"></div>
         </div>
-        <button class="btn-primary w-100" (click)="guardarProductoManual()">{{ productoEditando.id ? 'Actualizar Producto' : 'Guardar Producto' }}</button>
+        <div class="form-group" *ngIf="nuevoPersonal.rol === 'Doctor'"><label>Especialidad / Estudios</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.estudios" placeholder="Médico Cirujano / Odontólogo"></div>
+        <div class="form-group" *ngIf="nuevoPersonal.rol === 'Doctor'"><label>Cédula Profesional</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.cedulaProfesional" placeholder="5164506"></div>
+        <button class="btn-primary w-100" (click)="guardarPersonal()">Registrar Usuario</button>
       </div>
     </div>
   </div>

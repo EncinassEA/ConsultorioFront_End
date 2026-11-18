@@ -1,21 +1,29 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
+import Swal from 'sweetalert2';
 
 @Component({
   selector: 'app-inicio',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './inicio.component.html',
   styleUrls: ['./inicio.component.scss']
 })
 export class InicioComponent {
+  mostrarModalLogin: boolean = false;
+  credenciales = { correo: '', password: '' };
+  cargandoLogin: boolean = false;
+
+  private apiLoginUrl = 'https://localhost:7290/api/Usuarios/login';
 
   listaEspecialidades = [
     'Odontología', 'Pediatría', 'Ginecología', 'Oftalmología', 
     'Dermatología', 'Medicina General', 'Ortopedia', 'Cardiología'
   ];
 
-  // Base de datos general de consultorios registrados
   consultorios = [
     { 
       nombre: 'Centro Médico Integral Sur', 
@@ -70,7 +78,42 @@ export class InicioComponent {
     { titulo: 'Especialistas Certificados', desc: 'Verificamos las cédulas de todos los médicos en nuestra plataforma.', icono: '✅' }
   ];
 
+  constructor(private http: HttpClient, private router: Router) {}
+
   buscarClinica() {
-    alert('Buscando en el directorio médico...');
+    Swal.fire('Directorio Médico', 'Filtrando consultorios disponibles en Ciudad Obregón...', 'info');
+  }
+
+  iniciarSesion() {
+    if (!this.credenciales.correo || !this.credenciales.password) {
+      Swal.fire('Campos incompletos', 'Por favor ingresa tu correo y contraseña.', 'warning');
+      return;
+    }
+
+    this.cargandoLogin = true;
+    this.http.post(this.apiLoginUrl, this.credenciales, { responseType: 'text' }).subscribe({
+      next: (token: string) => {
+        this.cargandoLogin = false;
+        // Limpiamos comillas por si vienen en la respuesta y guardamos el JWT
+        const tokenLimpio = token.replace(/"/g, '');
+        localStorage.setItem('token_medical_staff', tokenLimpio);
+        localStorage.setItem('correo_usuario', this.credenciales.correo);
+
+        this.mostrarModalLogin = false;
+        Swal.fire({
+          title: '¡Bienvenido!',
+          text: 'Acceso autorizado al panel clínico.',
+          icon: 'success',
+          timer: 1200,
+          showConfirmButton: false
+        }).then(() => {
+          this.router.navigate(['/dashboard']);
+        });
+      },
+      error: () => {
+        this.cargandoLogin = false;
+        Swal.fire('Acceso Denegado', 'Correo o contraseña incorrectos.', 'error');
+      }
+    });
   }
 }

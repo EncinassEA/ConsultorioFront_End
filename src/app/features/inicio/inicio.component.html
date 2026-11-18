@@ -25,16 +25,14 @@
     </ul>
     
     <div class="nav-actions">
-      <button class="btn-text">Iniciar Sesión</button>
-      <button class="btn-primary">Regístrate</button>
+      <button class="btn-text" (click)="mostrarModalLogin = true">Iniciar Sesión</button>
+      <button class="btn-primary" (click)="mostrarModalLogin = true">Acceso Médicos</button>
     </div>
   </nav>
 
   <!-- ================= HERO SECTION (Blanco/Luminoso) ================= -->
   <header class="hero-section">
     <div class="hero-content">
-      
-      <!-- Único Badge de Sonora -->
       <div class="badge-location">
         <span class="dot"></span> Directorio Médico | Sonora
       </div>
@@ -78,7 +76,7 @@
     </div>
   </header>
 
-  <!-- ================= CINTA DE ESTADÍSTICAS (Nuevo detalle Frontend) ================= -->
+  <!-- ================= CINTA DE ESTADÍSTICAS ================= -->
   <div class="stats-ribbon">
     <div class="container stats-flex">
       <div class="stat-item"><h3>+1,200</h3><p>Pacientes Atendidos</p></div>
@@ -125,7 +123,7 @@
     </div>
   </section>
 
-  <!-- ================= MAPA API PLACEHOLDER (Tu idea hecha realidad) ================= -->
+  <!-- ================= MAPA API PLACEHOLDER ================= -->
   <section id="mapa" class="section-map container">
     <div class="map-wrapper">
       <div class="map-overlay">
@@ -161,7 +159,7 @@
         <h2>¿Eres dueño de un consultorio?</h2>
         <p>Usa el software líder en gestión clínica. Digitaliza expedientes, controla tu inventario de medicamentos y agenda pacientes automáticamente.</p>
         <div class="cta-actions">
-          <button class="btn-primary btn-large">Descubre el Software (SaaS)</button>
+          <button class="btn-primary btn-large" (click)="mostrarModalLogin = true">Descubre el Software (SaaS)</button>
         </div>
       </div>
       <div class="cta-image hidden-mobile">
@@ -193,8 +191,8 @@
       <div class="footer-links">
         <div class="link-column">
           <h4>Plataforma</h4>
-          <a href="#">Buscar Clínicas</a>
-          <a href="#">Registrar mi Consultorio</a>
+          <a href="#clinicas">Buscar Clínicas</a>
+          <a href="#" (click)="mostrarModalLogin = true">Registrar mi Consultorio</a>
         </div>
         <div class="link-column">
           <h4>Soporte</h4>
@@ -207,5 +205,28 @@
       <p>© 2026 Medical Staff. Desarrollado en Ciudad Obregón.</p>
     </div>
   </footer>
+
+  <!-- ================= MODAL DE LOGIN JWT ================= -->
+  <div *ngIf="mostrarModalLogin" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
+    <div style="background: white; width: 100%; max-width: 400px; border-radius: 1rem; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: #0f172a; color: white;">
+        <h3 style="margin: 0; font-size: 1.2rem;">🔒 Acceso a Medical Staff</h3>
+        <button (click)="mostrarModalLogin = false" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">✖</button>
+      </div>
+      <div style="padding: 1.5rem;">
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 0.4rem;">Correo Electrónico</label>
+          <input type="email" [(ngModel)]="credenciales.correo" placeholder="ana.recepcion@clinica.com" style="width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-sizing: border-box;">
+        </div>
+        <div style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 0.4rem;">Contraseña</label>
+          <input type="password" [(ngModel)]="credenciales.password" (keyup.enter)="iniciarSesion()" placeholder="••••••••" style="width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-sizing: border-box;">
+        </div>
+        <button class="btn-primary" style="width: 100%; padding: 0.9rem; border-radius: 0.5rem;" [disabled]="cargandoLogin" (click)="iniciarSesion()">
+          {{ cargandoLogin ? 'Verificando con BCrypt...' : 'Ingresar al Panel' }}
+        </button>
+      </div>
+    </div>
+  </div>
 
 </div>

@@ -1,29 +1,44 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
-import { SyncService } from '../../core/services/sync.service';
-import Swal from 'sweetalert2'; 
+import { Router } from '@angular/router';
+import Swal from 'sweetalert2';
 
 @Component({
   selector: 'app-dashboard-clinica',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './dashboard-clinica.component.html',
   styleUrls: ['./dashboard-clinica.component.scss']
 })
 export class DashboardClinicaComponent implements OnInit {
-  
-  configClinica = { id: 1, nombre: 'Clínica San José', logo: '🏥', direccion: 'Av. Miguel Alemán 153 Sur', telefono: '644 415 3044' };
-  
+  // Configuración persistente de la clínica
+  configClinica = {
+    nombre: 'Clínica Medical Staff',
+    logo: '🏥',
+    direccion: 'Av. Miguel Alemán 153 Sur, Cd. Obregón',
+    telefono: '644 415 3044'
+  };
+
   mostrarModalConfig: boolean = false;
   activeTab: string = 'resumen';
-  doctorActual = { nombre: 'Dr. Roberto Sánchez', especialidad: 'Odontólogo Titular', cedula: 'CED. PROF: 5164506' };
-  
+
+  // Usuario/Médico autenticado dinámicamente desde la BD
+  doctorActual: any = {
+    id: 1,
+    nombre: 'Cargando...',
+    especialidad: 'Médico Cirujano',
+    cedula: 'En trámite',
+    rol: 'Doctor',
+    iniciales: 'MS'
+  };
+
   fechaHoy = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
   fechaHoyISO = new Date().toISOString().substring(0, 10);
 
-  vistaAgenda: 'lista' | 'calendario' = 'calendario';
-  mesDesplegado = new Date(); 
+  // Calendario y Agenda
+  mesDesplegado = new Date();
   mesActualTitulo: string = '';
   diasCalendario: any[] = [];
   nombresMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -31,79 +46,206 @@ export class DashboardClinicaComponent implements OnInit {
   fechaFiltroAgenda: string = this.fechaHoyISO;
   citasFiltradasAgenda: any[] = [];
   fechaFiltroHistorial: string = '';
-  
-  pacienteSeleccionado: any = null;
+
+  // Modales
   mostrarModalCita: boolean = false;
   mostrarModalPaciente: boolean = false;
   mostrarModalInventario: boolean = false;
+  mostrarModalPersonal: boolean = false;
   mostrarModalDetalleConsulta: boolean = false;
   consultaSeleccionada: any = null;
-  
-  pacienteEnConsulta: any = null;
-  pacienteEditando: any = { nombreCompleto: '', telefono: '', edad: null, sexo: '', alergias: '', fechaNacimiento: '' }; 
 
-  // --- VARIABLES INVENTARIO ---
-  productoEditando: any = { nombreProducto: '', cantidad: null };
+  // Búsquedas
+  terminoBusquedaPaciente: string = '';
+  pacientesFiltrados: any[] = [];
   terminoBusquedaInventario: string = '';
   inventarioFiltrado: any[] = [];
 
+  // Estado de Consulta Activa (Secciones 1 a 5 del Expediente Clínico)
+  pacienteEnConsulta: any = null;
+  historialPacienteActual: any[] = [];
+  signosVitales = {
+    motivoConsulta: '',
+    frecuenciaCardiaca: '',
+    frecuenciaRespiratoria: '',
+    temperatura: null as number | null,
+    saturacionOxigeno: '',
+    peso: null as number | null,
+    talla: null as number | null,
+    imc: null as number | null,
+    exploracionFisica: '',
+    diagnostico: '',
+    codigoCIE10: '',
+    planTerapeutico: '',
+    recetaMedicamentos: '',
+    estudiosAuxiliares: '',
+    fechaProximaCita: ''
+  };
+
+  // Formularios de Modales (Pacientes, Citas, Inventario, Personal)
+  pacienteEditando: any = this.obtenerPacienteVacio();
+  nuevaCitaForm: any = {
+    pacienteId: 0,
+    doctorId: 1,
+    fecha: this.fechaHoyISO,
+    hora: '09:00',
+    motivoConsulta: '',
+    notasRecepcion: ''
+  };
+  productoEditando: any = { id: 0, nombre: '', cantidad: null, unidadMedida: 'Piezas', fechaCaducidad: '' };
+  nuevoPersonal: any = {
+    nombre: '',
+    correo: '',
+    passwordHash: '',
+    rol: 'Doctor',
+    telefono: '',
+    estudios: 'Médico Cirujano',
+    cedulaProfesional: '',
+    tarifaConsulta: 800
+  };
+
+  // Listas de datos reales desde PostgreSQL
   todasLasCitas: any[] = [];
   citasDeHoy: any[] = [];
   directorioPacientes: any[] = [];
   consultasRealizadas: any[] = [];
   consultasFiltradas: any[] = [];
   inventario: any[] = [];
-  
+  listaPersonal: any[] = [];
+  listaDoctores: any[] = [];
+
   consultasDeHoy: number = 0;
   inventarioCritico: number = 0;
 
-  apiCitas = 'http://localhost:5174/api/citas';
-  apiPacientes = 'http://localhost:5174/api/pacientes';
-  apiConsultas = 'http://localhost:5174/api/consultas';
-  apiInventario = 'http://localhost:5174/api/inventario';
-  apiClinicas = 'http://localhost:5174/api/clinicas';
-  clinicaId = 1; 
+  // URLs Oficiales de tu Backend ASP.NET Core (.NET 8)
+  private apiBase = 'https://localhost:7290/api';
+  apiUsuarios = `${this.apiBase}/Usuarios`;
+  apiPacientes = `${this.apiBase}/Pacientes`;
+  apiCitas = `${this.apiBase}/Citas`;
+  apiNotas = `${this.apiBase}/NotasMedicas`;
+  apiInsumos = `${this.apiBase}/Insumos`;
 
   isOffline: boolean = !navigator.onLine;
 
-  constructor(private http: HttpClient, private syncService: SyncService) { }
+  constructor(private http: HttpClient, private router: Router) {}
 
   ngOnInit() {
-    window.addEventListener('offline', () => this.isOffline = true);
-    window.addEventListener('online', () => { this.isOffline = false; this.cargarDatosReales(); });
+    if (!localStorage.getItem('token_medical_staff')) {
+      this.router.navigate(['/']);
+      return;
+    }
+
+    const configGuardada = localStorage.getItem('config_clinica_medical_staff');
+    if (configGuardada) {
+      this.configClinica = JSON.parse(configGuardada);
+    }
+
+    window.addEventListener('offline', () => (this.isOffline = true));
+    window.addEventListener('online', () => {
+      this.isOffline = false;
+      this.cargarDatosReales();
+    });
+
     this.cargarDatosReales();
   }
 
-  // --- CARGA DE DATOS ---
+  obtenerPacienteVacio() {
+    return {
+      id: 0,
+      fotoUrl: '',
+      nombre: '',
+      apellidos: '',
+      curp: '',
+      sexo: 'Masculino',
+      fechaNacimiento: '',
+      direccion: '',
+      telefono: '',
+      contactoEmergencia: '',
+      antecedentesHeredoFamiliares: '',
+      antecedentesPatologicos: '',
+      alergias: 'Ninguna',
+      antecedentesNoPatologicos: ''
+    };
+  }
+
+  calcularEdad(fechaNacimientoStr: string): number {
+    if (!fechaNacimientoStr) return 0;
+    const hoy = new Date();
+    const cumple = new Date(fechaNacimientoStr);
+    let edad = hoy.getFullYear() - cumple.getFullYear();
+    const m = hoy.getMonth() - cumple.getMonth();
+    if (m < 0 || (m === 0 && hoy.getDate() < cumple.getDate())) {
+      edad--;
+    }
+    return edad >= 0 ? edad : 0;
+  }
+
+  calcularIMC() {
+    const peso = Number(this.signosVitales.peso);
+    const talla = Number(this.signosVitales.talla);
+    if (peso > 0 && talla > 0) {
+      // Si el usuario ingresa la talla en centímetros (ej. 175), la convertimos a metros (1.75)
+      const tallaMetros = talla > 3 ? talla / 100 : talla;
+      this.signosVitales.imc = Number((peso / (tallaMetros * tallaMetros)).toFixed(2));
+    } else {
+      this.signosVitales.imc = null;
+    }
+  }
+
+  // --- CARGA DE DATOS DESDE POSTGRESQL ---
   cargarDatosReales() {
-    this.http.get<any>(`${this.apiClinicas}/${this.clinicaId}`).subscribe(res => {
-      if(res) {
-        this.configClinica.nombre = res.nombre || 'Clínica San José';
-        this.configClinica.logo = res.logo || '🏥';
-        this.configClinica.direccion = res.direccion || 'Av. Miguel Alemán 153 Sur';
-        this.configClinica.telefono = res.telefono || '644 415 3044';
+    // 1. Cargar Usuarios (Doctores y Recepcionistas)
+    this.http.get<any[]>(this.apiUsuarios).subscribe({
+      next: (usuarios) => {
+        this.listaPersonal = usuarios;
+        this.listaDoctores = usuarios.filter(u => u.rol?.toLowerCase() === 'doctor');
+        if (this.listaDoctores.length === 0) this.listaDoctores = usuarios;
+
+        const correoLogueado = localStorage.getItem('correo_usuario');
+        const usuarioActivo = usuarios.find(u => u.correo === correoLogueado) || this.listaDoctores[0];
+
+        if (usuarioActivo) {
+          const partes = (usuarioActivo.nombre || 'MS').split(' ');
+          const iniciales = partes.length > 1 ? (partes[0][0] + partes[1][0]).toUpperCase() : partes[0].substring(0, 2).toUpperCase();
+          this.doctorActual = {
+            id: usuarioActivo.id,
+            nombre: usuarioActivo.nombre,
+            especialidad: usuarioActivo.estudios || usuarioActivo.rol,
+            cedula: usuarioActivo.cedulaProfesional ? `CED. PROF: ${usuarioActivo.cedulaProfesional}` : 'Personal Autorizado',
+            rol: usuarioActivo.rol,
+            iniciales: iniciales
+          };
+          this.nuevaCitaForm.doctorId = usuarioActivo.id;
+        }
+      },
+      error: (err) => {
+        if (err.status === 401) this.cerrarSesion();
       }
     });
 
-    this.http.get<any[]>(`${this.apiPacientes}/clinica/${this.clinicaId}`).subscribe(res => {
-      this.directorioPacientes = res.map(p => ({
-        ...p, 
-        id: p.id || p.Id,
-        nombreCompleto: p.nombreCompleto || p.nombrecompleto || 'Sin Nombre',
-        telefono: p.telefono || 'Sin registro', 
-        alergias: p.alergias || 'Ninguna', 
-        sexo: p.sexo || p.estadoCivil || p.estadocivil || 'No especificado',
-        fechaNacimiento: p.fechaNacimiento || p.fechanacimiento ? String(p.fechaNacimiento || p.fechanacimiento).substring(0, 10) : ''
-      }));
+    // 2. Cargar Pacientes
+    this.http.get<any[]>(this.apiPacientes).subscribe(res => {
+      this.directorioPacientes = res.map(p => {
+        const fechaLimpia = p.fechaNacimiento ? String(p.fechaNacimiento).substring(0, 10) : '';
+        return {
+          ...p,
+          nombreCompleto: `${p.nombre || ''} ${p.apellidos || ''}`.trim(),
+          fechaNacimiento: fechaLimpia,
+          edad: this.calcularEdad(fechaLimpia),
+          alergias: p.alergias || 'Ninguna'
+        };
+      });
+      this.filtrarPacientes();
       this.cargarCitas();
       this.cargarHistorialConsultas();
     });
 
-    this.http.get<any[]>(`${this.apiInventario}/clinica/${this.clinicaId}`).subscribe(res => {
-      this.inventario = res.map(i => ({ 
-        ...i, 
-        id: i.id || i.Id,
-        nombreProducto: i.nombreProducto || i.nombreproducto || 'Insumo',
+    // 3. Cargar Inventario (Insumos)
+    this.http.get<any[]>(this.apiInsumos).subscribe(res => {
+      this.inventario = res.map(i => ({
+        ...i,
+        nombreProducto: i.nombre,
+        unidad: i.unidadMedida || 'Piezas',
         estado: i.cantidad < 10 ? 'Crítico' : 'Óptimo'
       }));
       this.inventarioCritico = this.inventario.filter(i => i.cantidad < 10).length;
@@ -112,175 +254,414 @@ export class DashboardClinicaComponent implements OnInit {
   }
 
   cargarCitas() {
-    this.http.get<any[]>(`${this.apiCitas}/clinica/${this.clinicaId}`).subscribe(res => {
-      this.todasLasCitas = res.map(cita => {
-        const idBuscado = Number(cita.pacienteId || cita.pacienteid);
-        const pac = this.directorioPacientes.find(p => Number(p.id) === idBuscado);
-        return { 
-          ...cita, 
-          fechaHoraSegura: cita.fechaHora || cita.fechahora, 
-          pacienteNombre: pac ? pac.nombreCompleto : 'Desconocido', 
-          telefono: pac ? pac.telefono : 'N/A' 
-        };
-      });
-      this.citasDeHoy = this.todasLasCitas.filter(c => String(c.fechaHoraSegura).substring(0,10) === this.fechaHoyISO);
+    this.http.get<any[]>(this.apiCitas).subscribe(res => {
+      this.todasLasCitas = res.map(cita => ({
+        ...cita,
+        fechaHoraSegura: cita.fechaHora,
+        pacienteNombre: cita.nombrePaciente || 'Paciente',
+        motivo: cita.motivoConsulta || 'Consulta general'
+      }));
+
+      this.citasDeHoy = this.todasLasCitas.filter(
+        c => String(c.fechaHoraSegura).substring(0, 10) === this.fechaHoyISO
+      );
       this.filtrarAgendaPorDia(this.fechaFiltroAgenda);
       this.generarCalendario();
     });
   }
 
   cargarHistorialConsultas() {
-    this.http.get<any[]>(this.apiConsultas).subscribe(res => {
-      const consultasClinica = res.filter(c => c.clinicaId === this.clinicaId || c.clinicaid === this.clinicaId);
-      this.consultasRealizadas = consultasClinica.map(con => {
-        const idBuscado = Number(con.pacienteId || con.pacienteid);
-        const pac = this.directorioPacientes.find(p => Number(p.id) === idBuscado);
-        return { ...con, pacienteNombre: pac ? pac.nombreCompleto : 'Desconocido', fechaConsultaSegura: con.fechaConsulta || con.fechaconsulta || new Date().toISOString() };
-      });
-      this.consultasRealizadas.sort((a, b) => new Date(b.fechaConsultaSegura).getTime() - new Date(a.fechaConsultaSegura).getTime());
-      this.consultasDeHoy = this.consultasRealizadas.filter(c => String(c.fechaConsultaSegura).substring(0,10) === this.fechaHoyISO).length;
-      this.filtrarHistorial(''); 
+    this.http.get<any[]>(this.apiNotas).subscribe(res => {
+      this.consultasRealizadas = res.map(nota => ({
+        ...nota,
+        pacienteNombre: nota.nombrePaciente,
+        fechaConsultaSegura: nota.fechaRegistro
+      }));
+      this.consultasDeHoy = this.consultasRealizadas.filter(
+        c => String(c.fechaConsultaSegura).substring(0, 10) === this.fechaHoyISO
+      ).length;
+      this.filtrarHistorial(this.fechaFiltroHistorial);
     });
   }
 
   cambiarPestana(pestana: string) {
-    this.activeTab = pestana; 
-    this.pacienteSeleccionado = null; 
+    this.activeTab = pestana;
     this.pacienteEnConsulta = null;
     this.cargarDatosReales();
   }
 
-  guardarConfiguracionClinica(nombre: string, logo: string, dir: string, tel: string) {
-    const data = { id: this.clinicaId, nombre: nombre, logo: logo, direccion: dir, telefono: tel };
-    this.http.put(`${this.apiClinicas}/${this.clinicaId}`, data).subscribe(() => {
-      this.mostrarModalConfig = false;
-      Swal.fire({ title: 'Actualizado', text: 'Datos guardados', icon: 'success', timer: 1500, showConfirmButton: false });
-      this.cargarDatosReales();
-    });
+  cerrarSesion() {
+    localStorage.removeItem('token_medical_staff');
+    localStorage.removeItem('correo_usuario');
+    this.router.navigate(['/']);
   }
 
+  guardarConfiguracionClinica(nombre: string, logo: string, dir: string, tel: string) {
+    this.configClinica = { nombre, logo, direccion: dir, telefono: tel };
+    localStorage.setItem('config_clinica_medical_staff', JSON.stringify(this.configClinica));
+    this.mostrarModalConfig = false;
+    Swal.fire({ title: 'Actualizado', text: 'Datos de la clínica actualizados', icon: 'success', timer: 1500, showConfirmButton: false });
+  }
+
+  // --- FILTROS DE AGENDA E HISTORIAL ---
   filtrarAgendaPorDia(fecha: string) {
     this.fechaFiltroAgenda = fecha;
-    this.citasFiltradasAgenda = this.todasLasCitas.filter(c => String(c.fechaHoraSegura).substring(0,10) === fecha);
+    this.citasFiltradasAgenda = this.todasLasCitas.filter(
+      c => String(c.fechaHoraSegura).substring(0, 10) === fecha
+    );
   }
 
   filtrarHistorial(fechaBuscada: string) {
     this.fechaFiltroHistorial = fechaBuscada;
-    this.consultasFiltradas = !fechaBuscada ? [...this.consultasRealizadas] : this.consultasRealizadas.filter(c => String(c.fechaConsultaSegura).substring(0, 10) === fechaBuscada);
+    this.consultasFiltradas = !fechaBuscada
+      ? [...this.consultasRealizadas]
+      : this.consultasRealizadas.filter(c => String(c.fechaConsultaSegura).substring(0, 10) === fechaBuscada);
   }
-  
+
   abrirDetalleConsulta(consulta: any) {
     this.consultaSeleccionada = consulta;
     this.mostrarModalDetalleConsulta = true;
   }
 
-  // --- CRUD PACIENTES (ARREGLADO PARA ENVIAR NOMBRES EXACTOS DE C#) ---
-  abrirModalNuevoPaciente() { this.pacienteEditando = { nombreCompleto: '', telefono: '', edad: null, sexo: '', alergias: '', fechaNacimiento: '' }; this.mostrarModalPaciente = true; }
-  abrirModalEditarPaciente(paciente: any) { this.pacienteEditando = { ...paciente }; this.mostrarModalPaciente = true; }
+  exportarHistorialCSV() {
+    if (!this.consultasFiltradas.length) {
+      Swal.fire('Sin datos', 'No hay consultas para exportar.', 'info');
+      return;
+    }
+    const encabezados = ['ID,Fecha,Paciente,Medico,Motivo,Diagnostico,CIE10,PlanTerapeutico'];
+    const filas = this.consultasFiltradas.map(c =>
+      `${c.id},"${new Date(c.fechaConsultaSegura).toLocaleDateString()}","${c.pacienteNombre}","${c.nombreDoctor || ''}","${(c.motivoConsulta || '').replace(/"/g, '""')}","${(c.diagnostico || '').replace(/"/g, '""')}","${c.codigoCIE10 || ''}","${(c.planTerapeutico || '').replace(/"/g, '""')}"`
+    );
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + encabezados.concat(filas).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Historial_Clinico_${this.fechaHoyISO}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // --- CRUD PACIENTES (CON EXPEDIENTE NOM-004 COMPLETO) ---
+  filtrarPacientes() {
+    const t = this.terminoBusquedaPaciente.toLowerCase().trim();
+    this.pacientesFiltrados = !t
+      ? [...this.directorioPacientes]
+      : this.directorioPacientes.filter(
+          p =>
+            p.nombreCompleto.toLowerCase().includes(t) ||
+            (p.curp && p.curp.toLowerCase().includes(t)) ||
+            (p.telefono && p.telefono.includes(t))
+        );
+  }
+
+  abrirModalNuevoPaciente() {
+    this.pacienteEditando = this.obtenerPacienteVacio();
+    this.mostrarModalPaciente = true;
+  }
+
+  abrirModalEditarPaciente(paciente: any) {
+    this.pacienteEditando = { ...paciente };
+    this.mostrarModalPaciente = true;
+  }
 
   guardarPacienteManual() {
-    if (!this.pacienteEditando.nombreCompleto) { Swal.fire('Falta Nombre', 'El nombre es obligatorio', 'warning'); return; }
-    
-    const telRegex = /^\d{10}$/;
-    if (!this.pacienteEditando.telefono || !telRegex.test(this.pacienteEditando.telefono)) {
-      Swal.fire('Teléfono Inválido', 'El teléfono debe tener exactamente 10 dígitos numéricos.', 'warning'); return;
+    if (!this.pacienteEditando.nombre || !this.pacienteEditando.apellidos || !this.pacienteEditando.curp) {
+      Swal.fire('Campos Obligatorios', 'Nombre, Apellidos y CURP son requeridos por normativa clínica.', 'warning');
+      return;
     }
 
-    const fechaNac = this.pacienteEditando.fechaNacimiento ? new Date(this.pacienteEditando.fechaNacimiento).toISOString() : null;
+    const fechaISO = this.pacienteEditando.fechaNacimiento
+      ? new Date(this.pacienteEditando.fechaNacimiento).toISOString()
+      : null;
 
-    // AHORA SÍ MANDAMOS 'sexo' y 'fechaNacimiento' COMO C# ESPERA
-    const payload = { 
-      clinicaId: this.clinicaId, 
-      nombreCompleto: this.pacienteEditando.nombreCompleto, 
-      telefono: this.pacienteEditando.telefono, 
-      edad: Number(this.pacienteEditando.edad) || 0, 
-      sexo: this.pacienteEditando.sexo || 'No especificado', 
+    const payload = {
+      id: this.pacienteEditando.id || 0,
+      fotoUrl: this.pacienteEditando.fotoUrl || null,
+      nombre: this.pacienteEditando.nombre.trim(),
+      apellidos: this.pacienteEditando.apellidos.trim(),
+      curp: this.pacienteEditando.curp.toUpperCase().trim(),
+      sexo: this.pacienteEditando.sexo || 'No especificado',
+      fechaNacimiento: fechaISO,
+      direccion: this.pacienteEditando.direccion || null,
+      telefono: this.pacienteEditando.telefono || null,
+      contactoEmergencia: this.pacienteEditando.contactoEmergencia || null,
+      antecedentesHeredoFamiliares: this.pacienteEditando.antecedentesHeredoFamiliares || 'Negados',
+      antecedentesPatologicos: this.pacienteEditando.antecedentesPatologicos || 'Negados',
       alergias: this.pacienteEditando.alergias || 'Ninguna',
-      fechaNacimiento: fechaNac
+      antecedentesNoPatologicos: this.pacienteEditando.antecedentesNoPatologicos || 'Negados'
     };
-    
-    if (this.pacienteEditando.id) {
-      this.http.put(`${this.apiPacientes}/${this.pacienteEditando.id}`, { ...payload, id: this.pacienteEditando.id }).subscribe(() => {
-        this.mostrarModalPaciente = false; Swal.fire({ title: 'Actualizado', icon: 'success', timer: 1500, showConfirmButton: false });
-        this.cargarDatosReales();
+
+    if (this.pacienteEditando.id && this.pacienteEditando.id > 0) {
+      this.http.put(`${this.apiPacientes}/${this.pacienteEditando.id}`, payload).subscribe({
+        next: () => {
+          this.mostrarModalPaciente = false;
+          Swal.fire({ title: 'Expediente Actualizado', icon: 'success', timer: 1500, showConfirmButton: false });
+          this.cargarDatosReales();
+        },
+        error: () => Swal.fire('Error', 'No se pudo actualizar el paciente.', 'error')
       });
     } else {
-      this.http.post(this.apiPacientes, payload).subscribe(() => {
-        this.mostrarModalPaciente = false; Swal.fire({ title: 'Agregado', icon: 'success', timer: 1500, showConfirmButton: false });
-        this.cargarDatosReales();
+      delete (payload as any).id;
+      this.http.post(this.apiPacientes, payload).subscribe({
+        next: () => {
+          this.mostrarModalPaciente = false;
+          Swal.fire({ title: 'Paciente Registrado', icon: 'success', timer: 1500, showConfirmButton: false });
+          this.cargarDatosReales();
+        },
+        error: () => Swal.fire('Error', 'Verifica que todos los campos obligatorios estén correctos.', 'error')
       });
     }
   }
 
-  // ELIMINACIÓN INSTANTÁNEA (OPTIMISTIC UI)
   borrarPaciente(id: number) {
-    Swal.fire({ title: '¿Borrar paciente?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, borrar' }).then((r) => {
+    Swal.fire({
+      title: '¿Eliminar expediente?',
+      text: 'Esta acción borrará al paciente del directorio.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Sí, eliminar'
+    }).then(r => {
       if (r.isConfirmed) {
-        // 1. Lo quitamos de la pantalla a la velocidad de la luz
-        this.directorioPacientes = this.directorioPacientes.filter(p => p.id !== id);
-        Swal.fire({ title: 'Borrado', icon: 'success', timer: 1000, showConfirmButton: false });
-        
-        // 2. Le avisamos a C# por debajo del agua
-        this.http.delete(`${this.apiPacientes}/${id}`).subscribe(() => {
-          this.cargarHistorialConsultas(); // Refrescamos historial en silencio
+        this.http.delete(`${this.apiPacientes}/${id}`).subscribe({
+          next: () => {
+            Swal.fire({ title: 'Eliminado', icon: 'success', timer: 1000, showConfirmButton: false });
+            this.cargarDatosReales();
+          },
+          error: () => Swal.fire('No permitido', 'El paciente tiene citas o notas médicas asociadas.', 'error')
         });
       }
     });
   }
 
-  // --- CRUD INVENTARIO FULL ---
-  abrirModalNuevoProducto() { this.productoEditando = { nombreProducto: '', cantidad: null }; this.mostrarModalInventario = true; }
-  abrirModalEditarProducto(item: any) { this.productoEditando = { ...item }; this.mostrarModalInventario = true; }
+  // --- CRUD CITAS ---
+  abrirModalAgendarCita() {
+    this.nuevaCitaForm = {
+      pacienteId: this.directorioPacientes.length ? this.directorioPacientes[0].id : 0,
+      doctorId: this.doctorActual.id || 1,
+      fecha: this.fechaFiltroAgenda || this.fechaHoyISO,
+      hora: '10:00',
+      motivoConsulta: '',
+      notasRecepcion: ''
+    };
+    this.mostrarModalCita = true;
+  }
 
-  guardarProductoManual() {
-    if(!this.productoEditando.nombreProducto) { Swal.fire('Error', 'Ponle nombre al producto', 'error'); return; }
-    
-    const prod = { 
-      clinicaId: this.clinicaId, 
-      nombreProducto: this.productoEditando.nombreProducto, 
-      cantidad: Number(this.productoEditando.cantidad) || 0, 
-      unidad: 'Piezas', 
-      estado: Number(this.productoEditando.cantidad) < 10 ? 'Crítico' : 'Óptimo' 
+  guardarNuevaCita() {
+    if (!this.nuevaCitaForm.pacienteId || !this.nuevaCitaForm.fecha || !this.nuevaCitaForm.motivoConsulta) {
+      Swal.fire('Datos incompletos', 'Selecciona un paciente, fecha y motivo de consulta.', 'warning');
+      return;
+    }
+
+    const fechaHoraISO = new Date(`${this.nuevaCitaForm.fecha}T${this.nuevaCitaForm.hora || '09:00'}:00`).toISOString();
+
+    const payloadCita = {
+      pacienteId: Number(this.nuevaCitaForm.pacienteId),
+      doctorId: Number(this.nuevaCitaForm.doctorId),
+      fechaHora: fechaHoraISO,
+      motivoConsulta: this.nuevaCitaForm.motivoConsulta,
+      estado: 'Agendada',
+      notasRecepcion: this.nuevaCitaForm.notasRecepcion || 'Agendada desde panel'
     };
 
-    if (this.productoEditando.id) {
-      // MODO EDICIÓN
-      this.http.put(`${this.apiInventario}/${this.productoEditando.id}`, { ...prod, id: this.productoEditando.id }).subscribe({
-        next: () => {
-          this.mostrarModalInventario = false; 
-          Swal.fire({ title: '¡Actualizado!', icon: 'success', timer: 1000, showConfirmButton: false });
-          this.cargarDatosReales();
+    this.http.post(this.apiCitas, payloadCita).subscribe({
+      next: () => {
+        this.mostrarModalCita = false;
+        Swal.fire({ title: 'Cita Agendada', icon: 'success', timer: 1500, showConfirmButton: false });
+        this.cargarCitas();
+      },
+      error: () => Swal.fire('Error', 'No se pudo registrar la cita en PostgreSQL.', 'error')
+    });
+  }
+
+  // --- CONSULTA MÉDICA Y EXPEDIENTE CLÍNICO (SECCIONES 3, 4 Y 5) ---
+  limpiarSignosVitales(motivoPorDefecto: string = '') {
+    this.signosVitales = {
+      motivoConsulta: motivoPorDefecto,
+      frecuenciaCardiaca: '80 lpm',
+      frecuenciaRespiratoria: '18 rpm',
+      temperatura: 36.6,
+      saturacionOxigeno: '98%',
+      peso: null,
+      talla: null,
+      imc: null,
+      exploracionFisica: '',
+      diagnostico: '',
+      codigoCIE10: '',
+      planTerapeutico: '',
+      recetaMedicamentos: '',
+      estudiosAuxiliares: '',
+      fechaProximaCita: ''
+    };
+  }
+
+  iniciarConsultaDesdeCita(cita: any) {
+    const pac = this.directorioPacientes.find(p => Number(p.id) === Number(cita.pacienteId));
+    if (pac) {
+      this.pacienteEnConsulta = { ...pac, citaIdActiva: cita.id };
+      this.historialPacienteActual = this.consultasRealizadas.filter(c => Number(c.pacienteId) === Number(pac.id));
+      this.limpiarSignosVitales(cita.motivoConsulta || cita.motivo || 'Consulta programada');
+      this.activeTab = 'consulta';
+    } else {
+      Swal.fire('Aviso', 'No se encontró el expediente base del paciente.', 'warning');
+    }
+  }
+
+  iniciarConsultaDesdePaciente(pac: any) {
+    this.pacienteEnConsulta = { ...pac, citaIdActiva: null };
+    this.historialPacienteActual = this.consultasRealizadas.filter(c => Number(c.pacienteId) === Number(pac.id));
+    this.limpiarSignosVitales('Revisión médica general');
+    this.activeTab = 'consulta';
+  }
+
+  terminarConsulta() {
+    this.pacienteEnConsulta = null;
+  }
+
+  guardarConsultaCompleta() {
+    if (!this.signosVitales.motivoConsulta || !this.signosVitales.diagnostico || !this.signosVitales.planTerapeutico) {
+      Swal.fire('Campos requeridos', 'Motivo de consulta, Diagnóstico y Plan Terapéutico son obligatorios.', 'warning');
+      return;
+    }
+
+    // Si el paciente se atendió sin cita previa, creamos su cita de recepción en automático para cumplir la FK
+    if (!this.pacienteEnConsulta.citaIdActiva) {
+      const citaExpress = {
+        pacienteId: this.pacienteEnConsulta.id,
+        doctorId: this.doctorActual.id || 1,
+        fechaHora: new Date().toISOString(),
+        motivoConsulta: this.signosVitales.motivoConsulta,
+        estado: 'Agendada',
+        notasRecepcion: 'Consulta directa en consultorio'
+      };
+      this.http.post<any>(this.apiCitas, citaExpress).subscribe({
+        next: (citaCreada) => {
+          this.enviarNotaMedicaAPostgreSQL(citaCreada.id);
         },
-        error: (err) => {
-          console.error(err);
-          Swal.fire('Error del Servidor', 'C# rechazó la actualización. Abre F12 para ver el detalle.', 'error');
-        }
+        error: () => Swal.fire('Error', 'No se pudo generar el folio de cita para la nota médica.', 'error')
       });
     } else {
-      // MODO NUEVO PRODUCTO
-      this.http.post(this.apiInventario, prod).subscribe({
+      this.enviarNotaMedicaAPostgreSQL(this.pacienteEnConsulta.citaIdActiva);
+    }
+  }
+
+  private enviarNotaMedicaAPostgreSQL(citaId: number) {
+    const payloadNota = {
+      pacienteId: Number(this.pacienteEnConsulta.id),
+      citaId: Number(citaId),
+      doctorId: Number(this.doctorActual.id || 1),
+      motivoConsulta: this.signosVitales.motivoConsulta,
+      frecuenciaCardiaca: this.signosVitales.frecuenciaCardiaca,
+      frecuenciaRespiratoria: this.signosVitales.frecuenciaRespiratoria,
+      temperatura: this.signosVitales.temperatura ? Number(this.signosVitales.temperatura) : null,
+      saturacionOxigeno: this.signosVitales.saturacionOxigeno,
+      peso: this.signosVitales.peso ? Number(this.signosVitales.peso) : null,
+      talla: this.signosVitales.talla ? Number(this.signosVitales.talla) : null,
+      imc: this.signosVitales.imc ? Number(this.signosVitales.imc) : null,
+      exploracionFisica: this.signosVitales.exploracionFisica || 'Sin hallazgos anormales',
+      diagnostico: this.signosVitales.diagnostico,
+      codigoCIE10: this.signosVitales.codigoCIE10 || 'Z00.0',
+      planTerapeutico: this.signosVitales.planTerapeutico,
+      recetaMedicamentos: this.signosVitales.recetaMedicamentos || '',
+      estudiosAuxiliares: this.signosVitales.estudiosAuxiliares || 'Ninguno'
+    };
+
+    this.http.post(this.apiNotas, payloadNota).subscribe({
+      next: () => {
+        if (this.signosVitales.fechaProximaCita) {
+          const proxCita = {
+            pacienteId: Number(this.pacienteEnConsulta.id),
+            doctorId: Number(this.doctorActual.id || 1),
+            fechaHora: new Date(`${this.signosVitales.fechaProximaCita}T09:00:00`).toISOString(),
+            motivoConsulta: 'Cita de seguimiento: ' + this.signosVitales.diagnostico,
+            estado: 'Agendada',
+            notasRecepcion: 'Agendada automáticamente al finalizar consulta'
+          };
+          this.http.post(this.apiCitas, proxCita).subscribe(() => {
+            Swal.fire({ title: '¡Consulta y Seguimiento Guardados!', text: 'La cita actual pasó a Completada automáticamente.', icon: 'success', timer: 2000, showConfirmButton: false });
+            this.finalizarYRecargarTodo();
+          });
+        } else {
+          Swal.fire({ title: '¡Expediente Guardado!', text: 'La cita se marcó como Completada en PostgreSQL.', icon: 'success', timer: 2000, showConfirmButton: false });
+          this.finalizarYRecargarTodo();
+        }
+      },
+      error: () => Swal.fire('Error', 'Ocurrió un problema al guardar la nota médica.', 'error')
+    });
+  }
+
+  finalizarYRecargarTodo() {
+    this.terminarConsulta();
+    this.cargarDatosReales();
+  }
+
+  // --- CRUD INVENTARIO (/api/Insumos) ---
+  abrirModalNuevoProducto() {
+    this.productoEditando = { id: 0, nombre: '', cantidad: null, unidadMedida: 'Piezas', fechaCaducidad: '' };
+    this.mostrarModalInventario = true;
+  }
+
+  abrirModalEditarProducto(item: any) {
+    this.productoEditando = {
+      id: item.id,
+      nombre: item.nombre || item.nombreProducto,
+      cantidad: item.cantidad,
+      unidadMedida: item.unidadMedida || item.unidad || 'Piezas',
+      fechaCaducidad: item.fechaCaducidad ? String(item.fechaCaducidad).substring(0, 10) : ''
+    };
+    this.mostrarModalInventario = true;
+  }
+
+  guardarProductoManual() {
+    if (!this.productoEditando.nombre) {
+      Swal.fire('Atención', 'Ingresa el nombre del insumo médico.', 'warning');
+      return;
+    }
+
+    const payload = {
+      id: this.productoEditando.id || 0,
+      nombre: this.productoEditando.nombre,
+      cantidad: Number(this.productoEditando.cantidad) || 0,
+      unidadMedida: this.productoEditando.unidadMedida || 'Piezas',
+      fechaCaducidad: this.productoEditando.fechaCaducidad ? new Date(this.productoEditando.fechaCaducidad).toISOString() : null
+    };
+
+    if (this.productoEditando.id && this.productoEditando.id > 0) {
+      this.http.put(`${this.apiInsumos}/${this.productoEditando.id}`, payload).subscribe({
         next: () => {
-          this.mostrarModalInventario = false; 
-          Swal.fire({ title: '¡Guardado!', icon: 'success', timer: 1000, showConfirmButton: false });
+          this.mostrarModalInventario = false;
+          Swal.fire({ title: 'Inventario Actualizado', icon: 'success', timer: 1200, showConfirmButton: false });
           this.cargarDatosReales();
         },
-        error: (err) => {
-          console.error(err);
-          Swal.fire('Error del Servidor', 'C# rechazó el producto nuevo. Verifica la base de datos.', 'error');
-        }
+        error: () => Swal.fire('Error', 'No se pudo actualizar el insumo.', 'error')
+      });
+    } else {
+      delete (payload as any).id;
+      this.http.post(this.apiInsumos, payload).subscribe({
+        next: () => {
+          this.mostrarModalInventario = false;
+          Swal.fire({ title: 'Insumo Registrado', icon: 'success', timer: 1200, showConfirmButton: false });
+          this.cargarDatosReales();
+        },
+        error: () => Swal.fire('Error', 'No se pudo guardar el insumo.', 'error')
       });
     }
   }
 
-  // ELIMINACIÓN INSTANTÁNEA INVENTARIO
   borrarProducto(id: number) {
-    Swal.fire({ title: '¿Borrar producto?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Borrar' }).then((r) => {
+    Swal.fire({
+      title: '¿Eliminar insumo?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Eliminar'
+    }).then(r => {
       if (r.isConfirmed) {
-        this.inventario = this.inventario.filter(i => i.id !== id);
-        this.aplicarFiltrosInventario();
-        Swal.fire({ title: 'Borrado', icon: 'success', timer: 1000, showConfirmButton: false });
-        
-        this.http.delete(`${this.apiInventario}/${id}`).subscribe(); // Borrado en 2do plano
+        this.http.delete(`${this.apiInsumos}/${id}`).subscribe(() => {
+          Swal.fire({ title: 'Eliminado', icon: 'success', timer: 1000, showConfirmButton: false });
+          this.cargarDatosReales();
+        });
       }
     });
   }
@@ -295,127 +676,86 @@ export class DashboardClinicaComponent implements OnInit {
     if (criterio === 'mayor') this.inventarioFiltrado.sort((a, b) => b.cantidad - a.cantidad);
     else if (criterio === 'menor') this.inventarioFiltrado.sort((a, b) => a.cantidad - b.cantidad);
     else if (criterio === 'critico') this.inventarioFiltrado.sort((a, b) => (a.estado === 'Crítico' ? -1 : 1));
-    else this.aplicarFiltrosInventario(); // Defecto
+    else this.aplicarFiltrosInventario();
   }
 
   aplicarFiltrosInventario() {
-    this.inventarioFiltrado = this.inventario.filter(i => 
-      i.nombreProducto.toLowerCase().includes(this.terminoBusquedaInventario)
+    this.inventarioFiltrado = this.inventario.filter(i =>
+      (i.nombreProducto || '').toLowerCase().includes(this.terminoBusquedaInventario)
     );
   }
 
-  // --- CONSULTA Y VALIDACIONES ESTRICTAS ---
-  iniciarConsultaDesdeCita(cita: any) {
-    const idBuscado = Number(cita.pacienteId || cita.pacienteid);
-    const pacInfo = this.directorioPacientes.find(p => Number(p.id) === idBuscado);
-    this.pacienteEnConsulta = pacInfo ? { ...pacInfo, esNuevo: false } : { nombreCompleto: cita.pacienteNombre, telefono: cita.telefono, esNuevo: true };
-  }
-  
-  iniciarConsultaEnBlanco() { this.pacienteEnConsulta = { nombreCompleto: '', edad: null, telefono: '', sexo: '', alergias: 'Ninguna', fechaNacimiento: '', esNuevo: true }; }
-  terminarConsulta() { this.pacienteEnConsulta = null; }
-
-  guardarConsulta(diagnostico: string, receta: string, fechaProximaCita: string) {
-    
-    if (!this.pacienteEnConsulta.nombreCompleto) { Swal.fire('Falta Nombre', 'El nombre del paciente es obligatorio.', 'warning'); return; }
-    if (!this.pacienteEnConsulta.edad) { Swal.fire('Falta Edad', 'La edad es obligatoria.', 'warning'); return; }
-    if (!this.pacienteEnConsulta.sexo) { Swal.fire('Falta Sexo', 'El sexo es obligatorio.', 'warning'); return; }
-    
-    const telRegex = /^\d{10}$/;
-    if (!this.pacienteEnConsulta.telefono || !telRegex.test(this.pacienteEnConsulta.telefono)) {
-       Swal.fire('Teléfono Inválido', 'El teléfono debe ser de exactamente 10 dígitos.', 'warning'); return;
-    }
-
-    const fechaNac = this.pacienteEnConsulta.fechaNacimiento ? new Date(this.pacienteEnConsulta.fechaNacimiento).toISOString() : null;
-
-    const datosPac = {
-      clinicaId: this.clinicaId,
-      nombreCompleto: this.pacienteEnConsulta.nombreCompleto, 
-      telefono: this.pacienteEnConsulta.telefono,
-      edad: Number(this.pacienteEnConsulta.edad), 
-      sexo: this.pacienteEnConsulta.sexo, 
-      alergias: this.pacienteEnConsulta.alergias || 'Ninguna',
-      fechaNacimiento: fechaNac
+  // --- CRUD PERSONAL MÉDICO (/api/Usuarios) ---
+  abrirModalNuevoPersonal() {
+    this.nuevoPersonal = {
+      nombre: '',
+      correo: '',
+      passwordHash: '',
+      rol: 'Doctor',
+      telefono: '',
+      estudios: 'Médico Cirujano',
+      cedulaProfesional: '',
+      tarifaConsulta: 800
     };
-
-    if (!this.pacienteEnConsulta.id || this.pacienteEnConsulta.esNuevo) {
-      this.http.post<any>(this.apiPacientes, datosPac).subscribe({
-        next: (res) => {
-          const idReal = res.id || res.Id;
-          this.guardarCitaEHistorial(idReal, diagnostico, receta, fechaProximaCita);
-        },
-        error: () => Swal.fire('Error', 'El servidor no pudo crear al paciente.', 'error')
-      });
-    } else {
-      this.guardarCitaEHistorial(this.pacienteEnConsulta.id, diagnostico, receta, fechaProximaCita);
-    }
+    this.mostrarModalPersonal = true;
   }
 
-  guardarCitaEHistorial(idRealPaciente: number, diagnostico: string, receta: string, fechaProximaCita: string) {
-    const nuevaConsulta = { clinicaId: this.clinicaId, pacienteId: idRealPaciente, diagnostico: diagnostico, recetaMedica: receta, doctorId: 1, fechaConsulta: new Date().toISOString() };
-    
-    this.http.post(this.apiConsultas, nuevaConsulta).subscribe({
+  guardarPersonal() {
+    if (!this.nuevoPersonal.nombre || !this.nuevoPersonal.correo || !this.nuevoPersonal.passwordHash) {
+      Swal.fire('Campos requeridos', 'Nombre, Correo y Contraseña son obligatorios.', 'warning');
+      return;
+    }
+
+    this.http.post(this.apiUsuarios, this.nuevoPersonal).subscribe({
       next: () => {
-        if (fechaProximaCita) {
-          const nuevaCita = { clinicaId: this.clinicaId, pacienteId: idRealPaciente, folio: 'CIT-' + Math.floor(Math.random() * 10000), fechaHora: fechaProximaCita + 'T09:00:00Z', estado: 'Pendiente', motivo: 'Cita de seguimiento' };
-          this.http.post(this.apiCitas, nuevaCita).subscribe(() => {
-            Swal.fire({ title: '¡Completado!', text: 'Consulta y Cita guardadas.', icon: 'success', timer: 2000, showConfirmButton: false });
-            this.finalizarYRecargarTodo();
-          });
-        } else {
-          Swal.fire({ title: '¡Excelente!', text: 'Consulta guardada.', icon: 'success', timer: 2000, showConfirmButton: false });
-          this.finalizarYRecargarTodo();
-        }
-      }
-    });
-  }
-
-  finalizarYRecargarTodo() {
-    this.terminarConsulta();
-    setTimeout(() => this.cargarDatosReales(), 500);
-  }
-
-  // --- AGENDA NORMAL ---
-  guardarNuevaCita(nombrePaciente: string, motivoCita: string, fechaCita: string) {
-    if (!nombrePaciente || !fechaCita) { Swal.fire('Error', 'Escribe el nombre y selecciona fecha', 'warning'); return; }
-    
-    let pacRegistrado = this.directorioPacientes.find(p => p.nombreCompleto.toLowerCase() === nombrePaciente.toLowerCase());
-    
-    if(!pacRegistrado) {
-      const nuevoPac = { clinicaId: this.clinicaId, nombreCompleto: nombrePaciente, telefono: '0000000000', edad: 0, sexo: 'No especificado', alergias: 'Ninguna' };
-      this.http.post<any>(this.apiPacientes, nuevoPac).subscribe(pCreado => {
-        const idReal = pCreado.id || pCreado.Id;
-        this.procesarCitaFinal(idReal, motivoCita, fechaCita);
-      });
-    } else {
-      this.procesarCitaFinal(pacRegistrado.id, motivoCita, fechaCita);
-    }
-  }
-
-  procesarCitaFinal(idPaciente: number, motivoCita: string, fechaCita: string) {
-    const nuevaCita = { clinicaId: this.clinicaId, pacienteId: idPaciente, folio: 'CIT-' + Math.floor(Math.random() * 10000), fechaHora: fechaCita + 'T09:00:00Z', estado: 'Pendiente', motivo: motivoCita || 'Revisión' };
-    this.http.post(this.apiCitas, nuevaCita).subscribe(() => {
-      this.mostrarModalCita = false;
-      Swal.fire({ title: 'Agendada', icon: 'success', timer: 1500, showConfirmButton: false });
-      this.cargarDatosReales();
+        this.mostrarModalPersonal = false;
+        Swal.fire({ title: 'Personal Registrado', text: 'Contraseña encriptada con BCrypt en PostgreSQL.', icon: 'success', timer: 1800, showConfirmButton: false });
+        this.cargarDatosReales();
+      },
+      error: () => Swal.fire('Error', 'No se pudo registrar el usuario.', 'error')
     });
   }
 
   // --- CALENDARIO VISUAL ---
-  imprimirReceta() { window.print(); }
+  imprimirReceta() {
+    window.print();
+  }
+
   generarCalendario() {
-    const year = this.mesDesplegado.getFullYear(); const month = this.mesDesplegado.getMonth();
-    this.mesActualTitulo = `${this.nombresMeses[month]} ${year}`; this.diasCalendario = [];
-    const primerDia = new Date(year, month, 1).getDay(); const diasEnMes = new Date(year, month + 1, 0).getDate();
-    for (let i = 0; i < primerDia; i++) this.diasCalendario.push({ numero: '', inactivo: true, citas: [], fechaCompleta: '' });
+    const year = this.mesDesplegado.getFullYear();
+    const month = this.mesDesplegado.getMonth();
+    this.mesActualTitulo = `${this.nombresMeses[month]} ${year}`;
+    this.diasCalendario = [];
+    const primerDia = new Date(year, month, 1).getDay();
+    const diasEnMes = new Date(year, month + 1, 0).getDate();
+
+    for (let i = 0; i < primerDia; i++) {
+      this.diasCalendario.push({ numero: '', inactivo: true, citas: [], fechaCompleta: '' });
+    }
     for (let i = 1; i <= diasEnMes; i++) {
       const fechaStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const citasDelDia = this.todasLasCitas.filter(c => c.fechaHoraSegura && String(c.fechaHoraSegura).substring(0, 10) === fechaStr);
+      const citasDelDia = this.todasLasCitas.filter(
+        c => c.fechaHoraSegura && String(c.fechaHoraSegura).substring(0, 10) === fechaStr
+      );
       this.diasCalendario.push({ numero: i, inactivo: false, citas: citasDelDia, fechaCompleta: fechaStr });
     }
   }
 
-  mesAnterior() { this.mesDesplegado.setMonth(this.mesDesplegado.getMonth() - 1); this.generarCalendario(); }
-  mesSiguiente() { this.mesDesplegado.setMonth(this.mesDesplegado.getMonth() + 1); this.generarCalendario(); }
-  cerrarModalCita() { this.mostrarModalCita = false; }
-  cerrarModalInventario() { this.mostrarModalInventario = false; }
+  mesAnterior() {
+    this.mesDesplegado.setMonth(this.mesDesplegado.getMonth() - 1);
+    this.generarCalendario();
+  }
+
+  mesSiguiente() {
+    this.mesDesplegado.setMonth(this.mesDesplegado.getMonth() + 1);
+    this.generarCalendario();
+  }
+
+  cerrarModalCita() {
+    this.mostrarModalCita = false;
+  }
+
+  cerrarModalInventario() {
+    this.mostrarModalInventario = false;
+  }
 }
