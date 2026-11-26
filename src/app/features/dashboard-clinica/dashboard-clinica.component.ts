@@ -1,9 +1,36 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import Swal from 'sweetalert2';
+
+interface CitaOfflinePendiente {
+  tempId: number;
+  payload: any;
+  meta: {
+    pacienteNombre: string;
+    curpPaciente: string;
+    nombreDoctor: string;
+    rolDoctor: string;
+    colorDoctor: string;
+  };
+}
+
+interface ConsultaOfflinePendiente {
+  tempId: number;
+  citaIdOriginal: number | null;
+  necesitaCitaExpress: boolean;
+  citaExpressPayload: any | null;
+  payloadNota: any;
+  payloadAlergias: { pacienteId: number; payload: any } | null;
+  meta: {
+    pacienteNombre: string;
+    nombreDoctor: string;
+    fechaRegistro: string;
+  };
+}
 
 @Component({
   selector: 'app-dashboard-clinica',
@@ -12,8 +39,8 @@ import Swal from 'sweetalert2';
   templateUrl: './dashboard-clinica.component.html',
   styleUrls: ['./dashboard-clinica.component.scss']
 })
-export class DashboardClinicaComponent implements OnInit {
-  // Configuración persistente de la clínica (PostgreSQL + respaldo localStorage)
+export class DashboardClinicaComponent implements OnInit, OnDestroy {
+  // Configuración persistente de la clínica (nube + respaldo local)
   configClinica = {
     id: 0,
     nombre: 'Clínica Medical Staff',
@@ -32,6 +59,24 @@ export class DashboardClinicaComponent implements OnInit {
   mostrarModalConfig: boolean = false;
   activeTab: string = 'resumen';
 
+  // Modos de visualización (Tarjetas vs Lista)
+  vistaPacientes: 'tarjetas' | 'lista' = 'tarjetas';
+  vistaInventario: 'tarjetas' | 'lista' = 'tarjetas';
+  vistaPersonal: 'tarjetas' | 'lista' = 'tarjetas';
+
+  // Paleta de colores para diferenciar médicos en la Agenda
+  paletaColoresAgenda: string[] = [
+    '#2563eb', // Azul
+    '#7c3aed', // Morado
+    '#059669', // Verde
+    '#db2777', // Rosa
+    '#d97706', // Ámbar
+    '#0891b2', // Cian
+    '#dc2626', // Rojo
+    '#4f46e5'  // Índigo
+  ];
+  doctorFiltroAgenda: number = 0; // 0 = Todos los médicos
+
   // Usuario/Médico autenticado dinámicamente desde la BD
   doctorActual: any = {
     id: 1,
@@ -39,7 +84,8 @@ export class DashboardClinicaComponent implements OnInit {
     especialidad: 'Médico Cirujano',
     cedula: 'En trámite',
     rol: 'Doctor',
-    iniciales: 'MS'
+    iniciales: 'MS',
+    colorAgenda: '#2563eb'
   };
 
   fechaHoy = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -66,10 +112,11 @@ export class DashboardClinicaComponent implements OnInit {
   mostrarModalDetalleConsulta: boolean = false;
   consultaSeleccionada: any = null;
 
-  // Búsquedas
+  // Búsquedas y ordenamiento
   terminoBusquedaPaciente: string = '';
   pacientesFiltrados: any[] = [];
   terminoBusquedaInventario: string = '';
+  criterioOrdenInventario: string = 'defecto';
   inventarioFiltrado: any[] = [];
 
   // Estado de Consulta Activa (Secciones 1 a 5 del Expediente Clínico)
@@ -114,7 +161,9 @@ export class DashboardClinicaComponent implements OnInit {
   };
   personalEditando: any = this.obtenerPersonalVacio();
 
-  // Listas de datos reales desde PostgreSQL
+  // Listas de datos (nube + mezcla offline)
+  private citasServidor: any[] = [];
+  private notasServidor: any[] = [];
   todasLasCitas: any[] = [];
   citasDeHoy: any[] = [];
   directorioPacientes: any[] = [];
@@ -127,7 +176,30 @@ export class DashboardClinicaComponent implements OnInit {
   consultasDeHoy: number = 0;
   inventarioCritico: number = 0;
 
-  // URLs Oficiales de tu Backend ASP.NET Core (.NET 8)
+  // ================= PWA / MODO OFFLINE =================
+  private readonly KEY_CACHE = 'cache_dashboard_medical_staff';
+  private readonly KEY_COLA_CITAS = 'cola_offline_citas_ms';
+  private readonly KEY_COLA_CONSULTAS = 'cola_offline_consultas_ms';
+
+  colaCitasOffline: CitaOfflinePendiente[] = [];
+  colaConsultasOffline: ConsultaOfflinePendiente[] = [];
+  isOffline: boolean = !navigator.onLine;
+  sincronizando: boolean = false;
+
+  private readonly onOfflineHandler = () => {
+    this.isOffline = true;
+  };
+
+  private readonly onOnlineHandler = () => {
+    this.isOffline = false;
+    if (this.totalPendientesSync > 0) {
+      this.sincronizarPendientes();
+    } else {
+      this.cargarDatosReales();
+    }
+  };
+
+  // URLs Oficiales del Backend ASP.NET Core (.NET 8)
   private apiBase = 'https://localhost:7290/api';
   apiUsuarios = `${this.apiBase}/Usuarios`;
   apiPacientes = `${this.apiBase}/Pacientes`;
@@ -137,9 +209,11 @@ export class DashboardClinicaComponent implements OnInit {
   apiClinicas = `${this.apiBase}/Clinicas`;
   apiAdmin = `${this.apiBase}/Admin`;
 
-  isOffline: boolean = !navigator.onLine;
-
   constructor(private http: HttpClient, private router: Router) {}
+
+  get totalPendientesSync(): number {
+    return this.colaCitasOffline.length + this.colaConsultasOffline.length;
+  }
 
   ngOnInit() {
     if (!localStorage.getItem('token_medical_staff')) {
@@ -156,16 +230,301 @@ export class DashboardClinicaComponent implements OnInit {
       }
     }
 
-    window.addEventListener('offline', () => (this.isOffline = true));
-    window.addEventListener('online', () => {
-      this.isOffline = false;
-      this.cargarDatosReales();
-    });
+    this.cargarColasOffline();
+    this.cargarCacheLocal();
 
-    this.cargarDatosReales();
+    window.addEventListener('offline', this.onOfflineHandler);
+    window.addEventListener('online', this.onOnlineHandler);
+
+    if (!this.isOffline && this.totalPendientesSync > 0) {
+      this.sincronizarPendientes();
+    } else {
+      this.cargarDatosReales();
+    }
   }
 
-  // --- UTILIDADES DE FECHA LOCAL Y MENSAJES DE ERROR ---
+  ngOnDestroy() {
+    window.removeEventListener('offline', this.onOfflineHandler);
+    window.removeEventListener('online', this.onOnlineHandler);
+  }
+
+  // ================= GESTIÓN DE CACHÉ Y COLAS OFFLINE =================
+  private cargarColasOffline() {
+    try {
+      this.colaCitasOffline = JSON.parse(localStorage.getItem(this.KEY_COLA_CITAS) || '[]');
+    } catch {
+      this.colaCitasOffline = [];
+    }
+    try {
+      this.colaConsultasOffline = JSON.parse(localStorage.getItem(this.KEY_COLA_CONSULTAS) || '[]');
+    } catch {
+      this.colaConsultasOffline = [];
+    }
+  }
+
+  private guardarColasOffline() {
+    localStorage.setItem(this.KEY_COLA_CITAS, JSON.stringify(this.colaCitasOffline));
+    localStorage.setItem(this.KEY_COLA_CONSULTAS, JSON.stringify(this.colaConsultasOffline));
+  }
+
+  private actualizarCacheLocal(parcial: Record<string, any>) {
+    try {
+      const actual = JSON.parse(localStorage.getItem(this.KEY_CACHE) || '{}');
+      localStorage.setItem(this.KEY_CACHE, JSON.stringify({ ...actual, ...parcial }));
+    } catch {
+      // Si el almacenamiento local está lleno, no interrumpe el flujo
+    }
+  }
+
+  private cargarCacheLocal() {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.KEY_CACHE) || '{}');
+      if (cache.stats) this.estadisticasAdmin = cache.stats;
+      if (Array.isArray(cache.usuarios) && cache.usuarios.length) {
+        this.procesarUsuarios(cache.usuarios);
+      }
+      if (Array.isArray(cache.pacientes)) {
+        this.procesarPacientes(cache.pacientes);
+      }
+      if (Array.isArray(cache.insumos)) {
+        this.procesarInventario(cache.insumos);
+      }
+      if (Array.isArray(cache.citas)) {
+        this.citasServidor = cache.citas;
+      }
+      if (Array.isArray(cache.notas)) {
+        this.notasServidor = cache.notas;
+      }
+      this.combinarCitasConOffline();
+      this.combinarNotasConOffline();
+    } catch {
+      // Sin caché previo
+    }
+  }
+
+  private combinarCitasConOffline() {
+    // IDs de citas que ya fueron atendidas localmente en una consulta offline
+    const citasCompletadasOffline = new Set(
+      this.colaConsultasOffline
+        .map(q => q.citaIdOriginal)
+        .filter((id): id is number => id !== null && id !== undefined)
+    );
+
+    const mapeadasServidor = this.citasServidor.map(cita => ({
+      ...cita,
+      estado: citasCompletadasOffline.has(Number(cita.id)) ? 'Completada' : cita.estado,
+      fechaHoraSegura: cita.fechaHora,
+      fechaLocalISO: this.obtenerFechaLocalISO(cita.fechaHora),
+      pacienteNombre: cita.nombrePaciente || 'Paciente',
+      motivo: cita.motivoConsulta || 'Consulta general',
+      colorDoctor: this.obtenerColorDoctor(cita.doctorId, cita.colorDoctor),
+      pendienteSync: false
+    }));
+
+    const mapeadasOffline = this.colaCitasOffline.map(item => ({
+      id: item.tempId,
+      folio: 'PENDIENTE',
+      pacienteId: item.payload.pacienteId,
+      nombrePaciente: item.meta.pacienteNombre,
+      curpPaciente: item.meta.curpPaciente,
+      doctorId: item.payload.doctorId,
+      nombreDoctor: item.meta.nombreDoctor,
+      rolDoctor: item.meta.rolDoctor,
+      colorDoctor: this.obtenerColorDoctor(item.payload.doctorId, item.meta.colorDoctor),
+      fechaHora: item.payload.fechaHora,
+      fechaHoraSegura: item.payload.fechaHora,
+      fechaLocalISO: this.obtenerFechaLocalISO(item.payload.fechaHora),
+      pacienteNombre: item.meta.pacienteNombre,
+      motivoConsulta: item.payload.motivoConsulta,
+      motivo: item.payload.motivoConsulta || 'Consulta general',
+      estado: citasCompletadasOffline.has(item.tempId) ? 'Completada' : (item.payload.estado || 'Agendada'),
+      notasRecepcion: item.payload.notasRecepcion,
+      pendienteSync: true
+    }));
+
+    this.todasLasCitas = [...mapeadasServidor, ...mapeadasOffline].sort(
+      (a, b) => new Date(a.fechaHoraSegura).getTime() - new Date(b.fechaHoraSegura).getTime()
+    );
+
+    this.citasDeHoy = this.todasLasCitas.filter(
+      c => c.fechaLocalISO === this.fechaHoyISO
+    );
+    this.filtrarAgendaPorDia(this.fechaFiltroAgenda);
+    this.generarCalendario();
+  }
+
+  private combinarNotasConOffline() {
+    const mapeadasServidor = this.notasServidor.map(nota => ({
+      ...nota,
+      pacienteNombre: nota.nombrePaciente,
+      fechaConsultaSegura: nota.fechaRegistro,
+      fechaLocalISO: this.obtenerFechaLocalISO(nota.fechaRegistro),
+      pendienteSync: false
+    }));
+
+    const mapeadasOffline = this.colaConsultasOffline.map(item => ({
+      id: item.tempId,
+      ...item.payloadNota,
+      nombrePaciente: item.meta.pacienteNombre,
+      pacienteNombre: item.meta.pacienteNombre,
+      nombreDoctor: item.meta.nombreDoctor,
+      fechaRegistro: item.meta.fechaRegistro,
+      fechaConsultaSegura: item.meta.fechaRegistro,
+      fechaLocalISO: this.obtenerFechaLocalISO(item.meta.fechaRegistro),
+      pendienteSync: true
+    }));
+
+    this.consultasRealizadas = [...mapeadasOffline, ...mapeadasServidor].sort(
+      (a, b) => new Date(b.fechaConsultaSegura).getTime() - new Date(a.fechaConsultaSegura).getTime()
+    );
+
+    this.consultasDeHoy = this.consultasRealizadas.filter(
+      c => c.fechaLocalISO === this.fechaHoyISO
+    ).length;
+    this.filtrarHistorial(this.fechaFiltroHistorial);
+  }
+
+  manejarClickSincronizacion() {
+    if (this.isOffline || !navigator.onLine) {
+      this.isOffline = !navigator.onLine;
+      if (this.isOffline) {
+        Swal.fire(
+          'Sin conexión a internet',
+          this.totalPendientesSync > 0
+            ? `Tienes ${this.totalPendientesSync} registro(s) guardados en este dispositivo. Se subirán automáticamente en cuanto regrese la conexión.`
+            : 'Puedes seguir agendando citas y realizando consultas. Todo se guardará en este dispositivo hasta que vuelva el internet.',
+          'info'
+        );
+        return;
+      }
+    }
+
+    if (this.totalPendientesSync > 0) {
+      this.sincronizarPendientes();
+    } else {
+      this.cargarDatosReales();
+    }
+  }
+
+  async sincronizarPendientes() {
+    if (this.sincronizando || this.isOffline || !navigator.onLine || this.totalPendientesSync === 0) {
+      return;
+    }
+
+    this.sincronizando = true;
+    let subidos = 0;
+    let errores = 0;
+    const mapaCitasIds = new Map<number, number>();
+
+    // 1. Subir primero las citas pendientes (para obtener sus IDs reales)
+    const citasPendientesCopia = [...this.colaCitasOffline];
+    for (const item of citasPendientesCopia) {
+      try {
+        const citaCreada: any = await firstValueFrom(this.http.post(this.apiCitas, item.payload));
+        if (citaCreada?.id) {
+          mapaCitasIds.set(item.tempId, citaCreada.id);
+        }
+        this.colaCitasOffline = this.colaCitasOffline.filter(c => c.tempId !== item.tempId);
+        this.guardarColasOffline();
+        subidos++;
+      } catch (err: any) {
+        if (err?.status === 0) {
+          this.isOffline = true;
+          break;
+        }
+        errores++;
+      }
+    }
+
+    // 2. Subir las consultas médicas pendientes
+    if (!this.isOffline) {
+      const consultasPendientesCopia = [...this.colaConsultasOffline];
+      for (const item of consultasPendientesCopia) {
+        try {
+          if (item.payloadAlergias) {
+            try {
+              await firstValueFrom(
+                this.http.put(`${this.apiPacientes}/${item.payloadAlergias.pacienteId}`, item.payloadAlergias.payload)
+              );
+            } catch {
+              // No bloquea la subida de la nota médica
+            }
+          }
+
+          let citaIdReal = item.citaIdOriginal;
+
+          if (item.necesitaCitaExpress && item.citaExpressPayload) {
+            const citaExpressCreada: any = await firstValueFrom(
+              this.http.post(this.apiCitas, item.citaExpressPayload)
+            );
+            citaIdReal = citaExpressCreada.id;
+          } else if (citaIdReal !== null && citaIdReal < 0) {
+            const idMapeado = mapaCitasIds.get(citaIdReal);
+            if (!idMapeado) {
+              errores++;
+              continue;
+            }
+            citaIdReal = idMapeado;
+          }
+
+          const payloadNotaFinal = {
+            ...item.payloadNota,
+            citaId: Number(citaIdReal)
+          };
+
+          await firstValueFrom(this.http.post(this.apiNotas, payloadNotaFinal));
+          this.colaConsultasOffline = this.colaConsultasOffline.filter(q => q.tempId !== item.tempId);
+          this.guardarColasOffline();
+          subidos++;
+        } catch (err: any) {
+          if (err?.status === 0) {
+            this.isOffline = true;
+            break;
+          }
+          errores++;
+        }
+      }
+    }
+
+    this.sincronizando = false;
+
+    if (subidos > 0) {
+      Swal.fire({
+        title: '☁️ Datos sincronizados',
+        text: errores > 0
+          ? `Se subieron ${subidos} registro(s) a la nube. ${errores} quedaron pendientes por revisar.`
+          : `Se subieron ${subidos} registro(s) guardados sin conexión a la nube.`,
+        icon: errores > 0 ? 'warning' : 'success',
+        timer: 2600,
+        showConfirmButton: false
+      });
+    }
+
+    if (!this.isOffline) {
+      this.cargarDatosReales();
+    } else {
+      this.combinarCitasConOffline();
+      this.combinarNotasConOffline();
+    }
+  }
+
+  private esErrorDeRed(err: any): boolean {
+    return this.isOffline || !navigator.onLine || err?.status === 0;
+  }
+
+  // --- UTILIDADES DE FECHA LOCAL, COLORES Y MENSAJES DE ERROR ---
+  obtenerColorDoctor(doctorId: number, colorDesdeCita?: string | null): string {
+    if (colorDesdeCita && colorDesdeCita.trim().length > 0) {
+      return colorDesdeCita.trim();
+    }
+    const medico = this.listaPersonal.find(u => Number(u.id) === Number(doctorId));
+    if (medico?.colorAgenda) {
+      return medico.colorAgenda;
+    }
+    const indice = Math.abs(Number(doctorId) || 0) % this.paletaColoresAgenda.length;
+    return this.paletaColoresAgenda[indice];
+  }
+
   obtenerFechaLocalISO(valor: Date | string | null | undefined): string {
     if (!valor) return '';
     if (typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor.trim())) {
@@ -183,7 +542,6 @@ export class DashboardClinicaComponent implements OnInit {
     if (!fechaYMD) return null;
     const limpia = fechaYMD.substring(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(limpia)) return null;
-    // Mediodía UTC evita que cambie de día en zonas horarias negativas (UTC-7 Sonora)
     return `${limpia}T12:00:00.000Z`;
   }
 
@@ -191,6 +549,9 @@ export class DashboardClinicaComponent implements OnInit {
     if (!err) return mensajePorDefecto;
     if (typeof err.error === 'string' && err.error.trim().length > 0) {
       return err.error.replace(/^"|"$/g, '');
+    }
+    if (err.error?.errors) {
+      return Object.values(err.error.errors).flat().join(' | ');
     }
     if (err.error?.mensaje) return err.error.mensaje;
     if (err.error?.title) return err.error.title;
@@ -218,6 +579,9 @@ export class DashboardClinicaComponent implements OnInit {
   }
 
   obtenerPersonalVacio() {
+    const colorSugerido = this.paletaColoresAgenda
+      ? this.paletaColoresAgenda[(this.listaPersonal?.length || 0) % this.paletaColoresAgenda.length]
+      : '#2563eb';
     return {
       id: 0,
       nombre: '',
@@ -225,6 +589,7 @@ export class DashboardClinicaComponent implements OnInit {
       password: '',
       rol: 'Doctor',
       estado: 'Activo',
+      colorAgenda: colorSugerido,
       telefono: '',
       estudios: 'Médico Cirujano',
       universidadEgreso: '',
@@ -260,11 +625,80 @@ export class DashboardClinicaComponent implements OnInit {
     }
   }
 
-  // --- CARGA DE DATOS DESDE POSTGRESQL ---
+  // --- PROCESADORES DE LISTAS ---
+  private procesarUsuarios(usuarios: any[]) {
+    this.listaPersonal = usuarios.map((u, idx) => ({
+      ...u,
+      colorAgenda: u.colorAgenda || this.paletaColoresAgenda[idx % this.paletaColoresAgenda.length]
+    }));
+
+    const doctoresActivos = this.listaPersonal.filter(
+      u => u.rol?.toLowerCase() === 'doctor' && u.estado !== 'Suspendido'
+    );
+    this.listaDoctores = doctoresActivos.length > 0
+      ? doctoresActivos
+      : this.listaPersonal.filter(u => u.estado !== 'Suspendido');
+
+    const correoLogueado = (localStorage.getItem('correo_usuario') || '').trim().toLowerCase();
+    const usuarioActivo =
+      this.listaPersonal.find(u => (u.correo || '').trim().toLowerCase() === correoLogueado) ||
+      this.listaDoctores[0] ||
+      this.listaPersonal[0];
+
+    if (usuarioActivo) {
+      const partes = (usuarioActivo.nombre || 'MS').trim().split(/\s+/);
+      const iniciales = partes.length > 1
+        ? (partes[0][0] + partes[1][0]).toUpperCase()
+        : partes[0].substring(0, 2).toUpperCase();
+      this.doctorActual = {
+        id: usuarioActivo.id,
+        nombre: usuarioActivo.nombre,
+        especialidad: usuarioActivo.estudios || usuarioActivo.rol,
+        cedula: usuarioActivo.cedulaProfesional ? `CED. PROF: ${usuarioActivo.cedulaProfesional}` : 'Personal Autorizado',
+        rol: usuarioActivo.rol,
+        iniciales: iniciales,
+        colorAgenda: usuarioActivo.colorAgenda || '#2563eb'
+      };
+      this.nuevaCitaForm.doctorId = usuarioActivo.id;
+    }
+  }
+
+  private procesarPacientes(res: any[]) {
+    this.directorioPacientes = res.map(p => {
+      const fechaLimpia = p.fechaNacimiento ? String(p.fechaNacimiento).substring(0, 10) : '';
+      return {
+        ...p,
+        nombreCompleto: `${p.nombre || ''} ${p.apellidos || ''}`.trim(),
+        fechaNacimiento: fechaLimpia,
+        edad: this.calcularEdad(fechaLimpia),
+        alergias: p.alergias || 'Ninguna'
+      };
+    });
+    this.filtrarPacientes();
+  }
+
+  private procesarInventario(res: any[]) {
+    this.inventario = res.map(i => ({
+      ...i,
+      nombreProducto: i.nombre,
+      unidad: i.unidadMedida || 'Piezas',
+      estado: i.cantidad < 10 ? 'Crítico' : (i.estado || 'Óptimo')
+    }));
+    this.inventarioCritico = this.inventario.filter(i => i.cantidad < 10).length;
+    this.aplicarFiltrosInventario();
+  }
+
+  // --- CARGA DE DATOS (NUBE + RESPALDO OFFLINE) ---
   cargarDatosReales() {
     this.fechaHoyISO = this.obtenerFechaLocalISO(new Date());
 
-    // 1. Cargar configuración de la Clínica desde PostgreSQL
+    if (this.isOffline || !navigator.onLine) {
+      this.isOffline = true;
+      this.cargarCacheLocal();
+      return;
+    }
+
+    // 1. Configuración de la Clínica
     this.http.get<any[]>(this.apiClinicas).subscribe({
       next: (clinicas) => {
         if (clinicas && clinicas.length > 0) {
@@ -279,12 +713,12 @@ export class DashboardClinicaComponent implements OnInit {
           localStorage.setItem('config_clinica_medical_staff', JSON.stringify(this.configClinica));
         }
       },
-      error: () => {
-        // Mantiene la configuración actual en localStorage si aún no hay registro
+      error: (err) => {
+        if (err?.status === 0) this.isOffline = true;
       }
     });
 
-    // 2. Cargar Estadísticas del AdminController
+    // 2. Estadísticas
     this.http.get<any>(`${this.apiAdmin}/estadisticas`).subscribe({
       next: (stats) => {
         if (stats) {
@@ -293,116 +727,91 @@ export class DashboardClinicaComponent implements OnInit {
             citasPendientes: stats.citasPendientes ?? 0,
             totalPacientes: stats.totalPacientes ?? 0
           };
+          this.actualizarCacheLocal({ stats: this.estadisticasAdmin });
         }
       },
       error: () => {}
     });
 
-    // 3. Cargar Usuarios (Doctores y Recepcionistas)
+    // 3. Usuarios
     this.http.get<any[]>(this.apiUsuarios).subscribe({
       next: (usuarios) => {
-        this.listaPersonal = usuarios;
-        const doctoresActivos = usuarios.filter(
-          u => u.rol?.toLowerCase() === 'doctor' && u.estado !== 'Suspendido'
-        );
-        this.listaDoctores = doctoresActivos.length > 0
-          ? doctoresActivos
-          : usuarios.filter(u => u.estado !== 'Suspendido');
-
-        const correoLogueado = (localStorage.getItem('correo_usuario') || '').trim().toLowerCase();
-        const usuarioActivo =
-          usuarios.find(u => (u.correo || '').trim().toLowerCase() === correoLogueado) ||
-          this.listaDoctores[0] ||
-          usuarios[0];
-
-        if (usuarioActivo) {
-          const partes = (usuarioActivo.nombre || 'MS').trim().split(/\s+/);
-          const iniciales = partes.length > 1
-            ? (partes[0][0] + partes[1][0]).toUpperCase()
-            : partes[0].substring(0, 2).toUpperCase();
-          this.doctorActual = {
-            id: usuarioActivo.id,
-            nombre: usuarioActivo.nombre,
-            especialidad: usuarioActivo.estudios || usuarioActivo.rol,
-            cedula: usuarioActivo.cedulaProfesional ? `CED. PROF: ${usuarioActivo.cedulaProfesional}` : 'Personal Autorizado',
-            rol: usuarioActivo.rol,
-            iniciales: iniciales
-          };
-          this.nuevaCitaForm.doctorId = usuarioActivo.id;
-        }
+        this.procesarUsuarios(usuarios);
+        this.actualizarCacheLocal({ usuarios });
       },
       error: (err) => {
         if (err.status === 401) this.cerrarSesion();
+        if (err.status === 0) this.isOffline = true;
       }
     });
 
-    // 4. Cargar Pacientes
-    this.http.get<any[]>(this.apiPacientes).subscribe(res => {
-      this.directorioPacientes = res.map(p => {
-        const fechaLimpia = p.fechaNacimiento ? String(p.fechaNacimiento).substring(0, 10) : '';
-        return {
-          ...p,
-          nombreCompleto: `${p.nombre || ''} ${p.apellidos || ''}`.trim(),
-          fechaNacimiento: fechaLimpia,
-          edad: this.calcularEdad(fechaLimpia),
-          alergias: p.alergias || 'Ninguna'
-        };
-      });
-      this.filtrarPacientes();
-      this.cargarCitas();
-      this.cargarHistorialConsultas();
+    // 4. Pacientes
+    this.http.get<any[]>(this.apiPacientes).subscribe({
+      next: (res) => {
+        this.procesarPacientes(res);
+        this.actualizarCacheLocal({ pacientes: res });
+        this.cargarCitas();
+        this.cargarHistorialConsultas();
+      },
+      error: (err) => {
+        if (err.status === 0) {
+          this.isOffline = true;
+          this.cargarCacheLocal();
+        }
+      }
     });
 
-    // 5. Cargar Inventario (Insumos)
-    this.http.get<any[]>(this.apiInsumos).subscribe(res => {
-      this.inventario = res.map(i => ({
-        ...i,
-        nombreProducto: i.nombre,
-        unidad: i.unidadMedida || 'Piezas',
-        estado: i.cantidad < 10 ? 'Crítico' : (i.estado || 'Óptimo')
-      }));
-      this.inventarioCritico = this.inventario.filter(i => i.cantidad < 10).length;
-      this.aplicarFiltrosInventario();
+    // 5. Inventario
+    this.http.get<any[]>(this.apiInsumos).subscribe({
+      next: (res) => {
+        this.procesarInventario(res);
+        this.actualizarCacheLocal({ insumos: res });
+      },
+      error: () => {}
     });
   }
 
   cargarCitas() {
-    this.http.get<any[]>(this.apiCitas).subscribe(res => {
-      this.todasLasCitas = res.map(cita => ({
-        ...cita,
-        fechaHoraSegura: cita.fechaHora,
-        fechaLocalISO: this.obtenerFechaLocalISO(cita.fechaHora),
-        pacienteNombre: cita.nombrePaciente || 'Paciente',
-        motivo: cita.motivoConsulta || 'Consulta general'
-      }));
-
-      this.citasDeHoy = this.todasLasCitas.filter(
-        c => c.fechaLocalISO === this.fechaHoyISO
-      );
-      this.filtrarAgendaPorDia(this.fechaFiltroAgenda);
-      this.generarCalendario();
+    this.http.get<any[]>(this.apiCitas).subscribe({
+      next: (res) => {
+        this.citasServidor = res;
+        this.actualizarCacheLocal({ citas: res });
+        this.combinarCitasConOffline();
+      },
+      error: (err) => {
+        if (err.status === 0) {
+          this.isOffline = true;
+          this.combinarCitasConOffline();
+        }
+      }
     });
   }
 
   cargarHistorialConsultas() {
-    this.http.get<any[]>(this.apiNotas).subscribe(res => {
-      this.consultasRealizadas = res.map(nota => ({
-        ...nota,
-        pacienteNombre: nota.nombrePaciente,
-        fechaConsultaSegura: nota.fechaRegistro,
-        fechaLocalISO: this.obtenerFechaLocalISO(nota.fechaRegistro)
-      }));
-      this.consultasDeHoy = this.consultasRealizadas.filter(
-        c => c.fechaLocalISO === this.fechaHoyISO
-      ).length;
-      this.filtrarHistorial(this.fechaFiltroHistorial);
+    this.http.get<any[]>(this.apiNotas).subscribe({
+      next: (res) => {
+        this.notasServidor = res;
+        this.actualizarCacheLocal({ notas: res });
+        this.combinarNotasConOffline();
+      },
+      error: (err) => {
+        if (err.status === 0) {
+          this.isOffline = true;
+          this.combinarNotasConOffline();
+        }
+      }
     });
   }
 
   cambiarPestana(pestana: string) {
     this.activeTab = pestana;
     this.pacienteEnConsulta = null;
-    this.cargarDatosReales();
+    if (!this.isOffline && navigator.onLine) {
+      this.cargarDatosReales();
+    } else {
+      this.combinarCitasConOffline();
+      this.combinarNotasConOffline();
+    }
   }
 
   cerrarSesion() {
@@ -443,7 +852,7 @@ export class DashboardClinicaComponent implements OnInit {
         this.mostrarModalConfig = false;
         Swal.fire({
           title: 'Actualizado',
-          text: 'Datos de la clínica guardados en PostgreSQL.',
+          text: 'Datos de la clínica guardados correctamente.',
           icon: 'success',
           timer: 1500,
           showConfirmButton: false
@@ -455,11 +864,19 @@ export class DashboardClinicaComponent implements OnInit {
     });
   }
 
-  // --- FILTROS DE AGENDA E HISTORIAL ---
+  // --- FILTROS DE AGENDA (POR DÍA Y POR DOCTOR) E HISTORIAL ---
+  seleccionarDoctorAgenda(doctorId: number) {
+    this.doctorFiltroAgenda = doctorId;
+    this.filtrarAgendaPorDia(this.fechaFiltroAgenda);
+    this.generarCalendario();
+  }
+
   filtrarAgendaPorDia(fecha: string) {
     this.fechaFiltroAgenda = fecha;
     this.citasFiltradasAgenda = this.todasLasCitas.filter(
-      c => c.fechaLocalISO === fecha
+      c =>
+        c.fechaLocalISO === fecha &&
+        (this.doctorFiltroAgenda === 0 || Number(c.doctorId) === Number(this.doctorFiltroAgenda))
     );
   }
 
@@ -480,9 +897,9 @@ export class DashboardClinicaComponent implements OnInit {
       Swal.fire('Sin datos', 'No hay consultas para exportar.', 'info');
       return;
     }
-    const encabezados = ['ID,Fecha,Paciente,Medico,Motivo,Diagnostico,CIE10,PlanTerapeutico'];
+    const encabezados = ['ID,Fecha,EstadoSync,Paciente,Medico,Motivo,Diagnostico,CIE10,PlanTerapeutico'];
     const filas = this.consultasFiltradas.map(c =>
-      `${c.id},"${new Date(c.fechaConsultaSegura).toLocaleDateString()}","${c.pacienteNombre}","${c.nombreDoctor || ''}","${(c.motivoConsulta || '').replace(/"/g, '""')}","${(c.diagnostico || '').replace(/"/g, '""')}","${c.codigoCIE10 || ''}","${(c.planTerapeutico || '').replace(/"/g, '""')}"`
+      `${c.id},"${new Date(c.fechaConsultaSegura).toLocaleDateString()}","${c.pendienteSync ? 'Pendiente de subir' : 'Sincronizado'}","${c.pacienteNombre}","${c.nombreDoctor || ''}","${(c.motivoConsulta || '').replace(/"/g, '""')}","${(c.diagnostico || '').replace(/"/g, '""')}","${c.codigoCIE10 || ''}","${(c.planTerapeutico || '').replace(/"/g, '""')}"`
     );
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + encabezados.concat(filas).join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -592,17 +1009,54 @@ export class DashboardClinicaComponent implements OnInit {
     });
   }
 
-  // --- CRUD CITAS ---
+  // --- CRUD CITAS (CON SOPORTE OFFLINE PWA) ---
   abrirModalAgendarCita() {
     this.nuevaCitaForm = {
       pacienteId: this.directorioPacientes.length ? this.directorioPacientes[0].id : 0,
-      doctorId: this.listaDoctores.length ? this.listaDoctores[0].id : (this.doctorActual.id || 1),
+      doctorId: this.doctorFiltroAgenda > 0
+        ? this.doctorFiltroAgenda
+        : (this.listaDoctores.length ? this.listaDoctores[0].id : (this.doctorActual.id || 1)),
       fecha: this.fechaFiltroAgenda || this.fechaHoyISO,
       hora: '10:00',
       motivoConsulta: '',
       notasRecepcion: ''
     };
     this.mostrarModalCita = true;
+  }
+
+  private encolarCitaOffline(payloadCita: any, mostrarAlerta: boolean = true): number {
+    const pac = this.directorioPacientes.find(p => Number(p.id) === Number(payloadCita.pacienteId));
+    const doc = this.listaPersonal.find(u => Number(u.id) === Number(payloadCita.doctorId));
+    const tempId = -Date.now() - Math.floor(Math.random() * 1000);
+
+    const pendiente: CitaOfflinePendiente = {
+      tempId,
+      payload: payloadCita,
+      meta: {
+        pacienteNombre: pac?.nombreCompleto || 'Paciente',
+        curpPaciente: pac?.curp || '',
+        nombreDoctor: doc?.nombre || this.doctorActual.nombre,
+        rolDoctor: doc?.rol || 'Doctor',
+        colorDoctor: this.obtenerColorDoctor(payloadCita.doctorId, doc?.colorAgenda)
+      }
+    };
+
+    this.colaCitasOffline.push(pendiente);
+    this.guardarColasOffline();
+    this.combinarCitasConOffline();
+
+    if (mostrarAlerta) {
+      this.mostrarModalCita = false;
+      Swal.fire({
+        title: '⏳ Cita guardada sin conexión',
+        text: 'Se agregó a tu agenda local y se subirá automáticamente en cuanto vuelva el internet.',
+        icon: 'info',
+        timer: 2600,
+        showConfirmButton: false
+      });
+    }
+
+    return tempId;
   }
 
   guardarNuevaCita() {
@@ -622,17 +1076,35 @@ export class DashboardClinicaComponent implements OnInit {
       notasRecepcion: this.nuevaCitaForm.notasRecepcion || 'Agendada desde panel'
     };
 
+    if (this.isOffline || !navigator.onLine) {
+      this.isOffline = true;
+      this.encolarCitaOffline(payloadCita, true);
+      return;
+    }
+
     this.http.post(this.apiCitas, payloadCita).subscribe({
       next: () => {
         this.mostrarModalCita = false;
         Swal.fire({ title: 'Cita Agendada', icon: 'success', timer: 1500, showConfirmButton: false });
         this.cargarDatosReales();
       },
-      error: (err) => Swal.fire('No se pudo agendar', this.extraerMensajeError(err, 'No se pudo registrar la cita en PostgreSQL.'), 'error')
+      error: (err) => {
+        if (this.esErrorDeRed(err)) {
+          this.isOffline = true;
+          this.encolarCitaOffline(payloadCita, true);
+        } else {
+          Swal.fire('No se pudo agendar', this.extraerMensajeError(err, 'No se pudo registrar la cita.'), 'error');
+        }
+      }
     });
   }
 
   cancelarCita(cita: any) {
+    if (cita.pendienteSync) {
+      this.eliminarCita(cita.id);
+      return;
+    }
+
     Swal.fire({
       title: '¿Cancelar esta cita?',
       text: `Paciente: ${cita.pacienteNombre}`,
@@ -666,13 +1138,21 @@ export class DashboardClinicaComponent implements OnInit {
   eliminarCita(id: number) {
     Swal.fire({
       title: '¿Eliminar cita?',
-      text: 'Se eliminará permanentemente de la agenda.',
+      text: id < 0 ? 'Se eliminará esta cita local pendiente de subir.' : 'Se eliminará permanentemente de la agenda.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#dc2626',
       confirmButtonText: 'Eliminar'
     }).then(r => {
       if (r.isConfirmed) {
+        if (id < 0) {
+          this.colaCitasOffline = this.colaCitasOffline.filter(c => c.tempId !== id);
+          this.guardarColasOffline();
+          this.combinarCitasConOffline();
+          Swal.fire({ title: 'Cita local eliminada', icon: 'success', timer: 1000, showConfirmButton: false });
+          return;
+        }
+
         this.http.delete(`${this.apiCitas}/${id}`).subscribe({
           next: () => {
             Swal.fire({ title: 'Cita Eliminada', icon: 'success', timer: 1000, showConfirmButton: false });
@@ -684,7 +1164,7 @@ export class DashboardClinicaComponent implements OnInit {
     });
   }
 
-  // --- CONSULTA MÉDICA Y EXPEDIENTE CLÍNICO (SECCIONES 3, 4 Y 5) ---
+  // --- CONSULTA MÉDICA Y EXPEDIENTE CLÍNICO (CON SOPORTE OFFLINE PWA) ---
   limpiarSignosVitales(motivoPorDefecto: string = '') {
     this.signosVitales = {
       motivoConsulta: motivoPorDefecto,
@@ -706,13 +1186,25 @@ export class DashboardClinicaComponent implements OnInit {
   }
 
   private cargarHistorialPacienteEnConsulta(pacienteId: number) {
+    if (this.isOffline || !navigator.onLine) {
+      this.historialPacienteActual = this.consultasRealizadas.filter(
+        c => Number(c.pacienteId) === Number(pacienteId)
+      );
+      return;
+    }
+
     this.http.get<any[]>(`${this.apiNotas}/historial/${pacienteId}`).subscribe({
       next: (notas) => {
-        this.historialPacienteActual = notas.map(n => ({
+        const remotas = notas.map(n => ({
           ...n,
           pacienteNombre: n.nombrePaciente,
-          fechaConsultaSegura: n.fechaRegistro
+          fechaConsultaSegura: n.fechaRegistro,
+          pendienteSync: false
         }));
+        const locales = this.consultasRealizadas.filter(
+          c => c.pendienteSync && Number(c.pacienteId) === Number(pacienteId)
+        );
+        this.historialPacienteActual = [...locales, ...remotas];
       },
       error: () => {
         this.historialPacienteActual = this.consultasRealizadas.filter(
@@ -756,62 +1248,35 @@ export class DashboardClinicaComponent implements OnInit {
     this.pacienteEnConsulta = null;
   }
 
-  guardarConsultaCompleta() {
-    if (!this.signosVitales.motivoConsulta || !this.signosVitales.diagnostico || !this.signosVitales.planTerapeutico) {
-      Swal.fire('Campos requeridos', 'Motivo de consulta, Diagnóstico y Plan Terapéutico son obligatorios.', 'warning');
-      return;
-    }
-
-    // Si el doctor modificó las alergias en la receta, actualizar también el expediente del paciente
+  private construirPayloadAlergiasSiCambio(): { pacienteId: number; payload: any } | null {
     const alergiasActuales = (this.pacienteEnConsulta.alergias || 'Ninguna').trim();
-    if (alergiasActuales !== this.alergiasOriginalesConsulta) {
-      const payloadPac: any = {
-        id: this.pacienteEnConsulta.id,
-        fotoUrl: this.pacienteEnConsulta.fotoUrl || null,
-        nombre: this.pacienteEnConsulta.nombre,
-        apellidos: this.pacienteEnConsulta.apellidos,
-        curp: this.pacienteEnConsulta.curp,
-        sexo: this.pacienteEnConsulta.sexo,
-        fechaNacimiento: this.construirFechaSoloDiaISO(this.pacienteEnConsulta.fechaNacimiento),
-        direccion: this.pacienteEnConsulta.direccion || null,
-        telefono: this.pacienteEnConsulta.telefono || null,
-        contactoEmergencia: this.pacienteEnConsulta.contactoEmergencia || null,
-        antecedentesHeredoFamiliares: this.pacienteEnConsulta.antecedentesHeredoFamiliares || 'Negados',
-        antecedentesPatologicos: this.pacienteEnConsulta.antecedentesPatologicos || 'Negados',
-        alergias: alergiasActuales,
-        antecedentesNoPatologicos: this.pacienteEnConsulta.antecedentesNoPatologicos || 'Negados'
-      };
-      if (this.pacienteEnConsulta.fechaRegistro) {
-        payloadPac.fechaRegistro = this.pacienteEnConsulta.fechaRegistro;
-      }
-      this.http.put(`${this.apiPacientes}/${this.pacienteEnConsulta.id}`, payloadPac).subscribe({
-        error: () => {}
-      });
+    if (alergiasActuales === this.alergiasOriginalesConsulta) {
+      return null;
     }
-
-    // Si el paciente se atendió sin cita previa, creamos su cita de recepción en automático para cumplir la FK
-    if (!this.pacienteEnConsulta.citaIdActiva) {
-      const citaExpress = {
-        pacienteId: this.pacienteEnConsulta.id,
-        doctorId: this.doctorActual.id || 1,
-        fechaHora: new Date().toISOString(),
-        motivoConsulta: this.signosVitales.motivoConsulta,
-        estado: 'Agendada',
-        notasRecepcion: 'Consulta directa en consultorio'
-      };
-      this.http.post<any>(this.apiCitas, citaExpress).subscribe({
-        next: (citaCreada) => {
-          this.enviarNotaMedicaAPostgreSQL(citaCreada.id);
-        },
-        error: (err) => Swal.fire('Error', this.extraerMensajeError(err, 'No se pudo generar el folio de cita para la nota médica.'), 'error')
-      });
-    } else {
-      this.enviarNotaMedicaAPostgreSQL(this.pacienteEnConsulta.citaIdActiva);
+    const payloadPac: any = {
+      id: this.pacienteEnConsulta.id,
+      fotoUrl: this.pacienteEnConsulta.fotoUrl || null,
+      nombre: this.pacienteEnConsulta.nombre,
+      apellidos: this.pacienteEnConsulta.apellidos,
+      curp: this.pacienteEnConsulta.curp,
+      sexo: this.pacienteEnConsulta.sexo,
+      fechaNacimiento: this.construirFechaSoloDiaISO(this.pacienteEnConsulta.fechaNacimiento),
+      direccion: this.pacienteEnConsulta.direccion || null,
+      telefono: this.pacienteEnConsulta.telefono || null,
+      contactoEmergencia: this.pacienteEnConsulta.contactoEmergencia || null,
+      antecedentesHeredoFamiliares: this.pacienteEnConsulta.antecedentesHeredoFamiliares || 'Negados',
+      antecedentesPatologicos: this.pacienteEnConsulta.antecedentesPatologicos || 'Negados',
+      alergias: alergiasActuales,
+      antecedentesNoPatologicos: this.pacienteEnConsulta.antecedentesNoPatologicos || 'Negados'
+    };
+    if (this.pacienteEnConsulta.fechaRegistro) {
+      payloadPac.fechaRegistro = this.pacienteEnConsulta.fechaRegistro;
     }
+    return { pacienteId: this.pacienteEnConsulta.id, payload: payloadPac };
   }
 
-  private enviarNotaMedicaAPostgreSQL(citaId: number) {
-    const payloadNota = {
+  private construirPayloadNota(citaId: number) {
+    return {
       pacienteId: Number(this.pacienteEnConsulta.id),
       citaId: Number(citaId),
       doctorId: Number(this.doctorActual.id || 1),
@@ -830,6 +1295,129 @@ export class DashboardClinicaComponent implements OnInit {
       recetaMedicamentos: this.signosVitales.recetaMedicamentos || '',
       estudiosAuxiliares: this.signosVitales.estudiosAuxiliares || 'Ninguno'
     };
+  }
+
+  private guardarConsultaOffline() {
+    const citaIdOriginal = this.pacienteEnConsulta.citaIdActiva ?? null;
+    const necesitaCitaExpress = !citaIdOriginal;
+    const citaExpressPayload = necesitaCitaExpress
+      ? {
+          pacienteId: Number(this.pacienteEnConsulta.id),
+          doctorId: Number(this.doctorActual.id || 1),
+          fechaHora: new Date().toISOString(),
+          motivoConsulta: this.signosVitales.motivoConsulta,
+          estado: 'Agendada',
+          notasRecepcion: 'Consulta directa en consultorio (modo sin conexión)'
+        }
+      : null;
+
+    const payloadAlergias = this.construirPayloadAlergiasSiCambio();
+    if (payloadAlergias) {
+      const pacLocal = this.directorioPacientes.find(p => Number(p.id) === Number(this.pacienteEnConsulta.id));
+      if (pacLocal) pacLocal.alergias = payloadAlergias.payload.alergias;
+    }
+
+    const pendiente: ConsultaOfflinePendiente = {
+      tempId: -Date.now() - Math.floor(Math.random() * 1000),
+      citaIdOriginal,
+      necesitaCitaExpress,
+      citaExpressPayload,
+      payloadNota: this.construirPayloadNota(citaIdOriginal || 0),
+      payloadAlergias,
+      meta: {
+        pacienteNombre: this.pacienteEnConsulta.nombreCompleto,
+        nombreDoctor: this.doctorActual.nombre,
+        fechaRegistro: new Date().toISOString()
+      }
+    };
+
+    this.colaConsultasOffline.push(pendiente);
+    this.guardarColasOffline();
+
+    // Si eligió fecha de próxima cita, también se agenda en la cola offline
+    if (this.signosVitales.fechaProximaCita) {
+      const proxCita = {
+        pacienteId: Number(this.pacienteEnConsulta.id),
+        doctorId: Number(this.doctorActual.id || 1),
+        fechaHora: new Date(`${this.signosVitales.fechaProximaCita}T09:00:00`).toISOString(),
+        motivoConsulta: 'Cita de seguimiento: ' + this.signosVitales.diagnostico,
+        estado: 'Agendada',
+        notasRecepcion: 'Agendada automáticamente sin conexión'
+      };
+      this.encolarCitaOffline(proxCita, false);
+    }
+
+    this.combinarCitasConOffline();
+    this.combinarNotasConOffline();
+
+    Swal.fire({
+      title: '⏳ Consulta guardada sin conexión',
+      text: 'Ya aparece en tu Historial como "Esperando internet" y se subirá automáticamente en cuanto regrese la conexión.',
+      icon: 'info',
+      timer: 3000,
+      showConfirmButton: false
+    });
+
+    this.terminarConsulta();
+
+    // Si ya volvió el internet pero la cita origen era offline (id negativo), sincroniza enseguida
+    if (!this.isOffline && navigator.onLine) {
+      this.sincronizarPendientes();
+    }
+  }
+
+  guardarConsultaCompleta() {
+    if (!this.signosVitales.motivoConsulta || !this.signosVitales.diagnostico || !this.signosVitales.planTerapeutico) {
+      Swal.fire('Campos requeridos', 'Motivo de consulta, Diagnóstico y Plan Terapéutico son obligatorios.', 'warning');
+      return;
+    }
+
+    // Si estamos sin internet O la cita activa es una cita offline pendiente de sincronizar
+    const citaEsOffline = this.pacienteEnConsulta.citaIdActiva && Number(this.pacienteEnConsulta.citaIdActiva) < 0;
+    if (this.isOffline || !navigator.onLine || citaEsOffline) {
+      if (!navigator.onLine) this.isOffline = true;
+      this.guardarConsultaOffline();
+      return;
+    }
+
+    // Actualizar alergias si cambiaron
+    const alergiasCambio = this.construirPayloadAlergiasSiCambio();
+    if (alergiasCambio) {
+      this.http.put(`${this.apiPacientes}/${alergiasCambio.pacienteId}`, alergiasCambio.payload).subscribe({
+        error: () => {}
+      });
+    }
+
+    // Si el paciente se atendió sin cita previa, creamos su cita de recepción en automático
+    if (!this.pacienteEnConsulta.citaIdActiva) {
+      const citaExpress = {
+        pacienteId: this.pacienteEnConsulta.id,
+        doctorId: this.doctorActual.id || 1,
+        fechaHora: new Date().toISOString(),
+        motivoConsulta: this.signosVitales.motivoConsulta,
+        estado: 'Agendada',
+        notasRecepcion: 'Consulta directa en consultorio'
+      };
+      this.http.post<any>(this.apiCitas, citaExpress).subscribe({
+        next: (citaCreada) => {
+          this.enviarNotaMedicaAlServidor(citaCreada.id);
+        },
+        error: (err) => {
+          if (this.esErrorDeRed(err)) {
+            this.isOffline = true;
+            this.guardarConsultaOffline();
+          } else {
+            Swal.fire('Error', this.extraerMensajeError(err, 'No se pudo generar el folio de cita para la nota médica.'), 'error');
+          }
+        }
+      });
+    } else {
+      this.enviarNotaMedicaAlServidor(this.pacienteEnConsulta.citaIdActiva);
+    }
+  }
+
+  private enviarNotaMedicaAlServidor(citaId: number) {
+    const payloadNota = this.construirPayloadNota(citaId);
 
     this.http.post(this.apiNotas, payloadNota).subscribe({
       next: () => {
@@ -854,9 +1442,13 @@ export class DashboardClinicaComponent implements OnInit {
               this.finalizarYRecargarTodo();
             },
             error: (err) => {
+              if (this.esErrorDeRed(err)) {
+                this.isOffline = true;
+                this.encolarCitaOffline(proxCita, false);
+              }
               Swal.fire(
                 'Expediente guardado con aviso',
-                `La nota médica se guardó, pero no se pudo agendar el seguimiento: ${this.extraerMensajeError(err, 'Conflicto de horario a las 09:00')}`,
+                `La nota médica se guardó, pero el seguimiento quedó pendiente: ${this.extraerMensajeError(err, 'Conflicto de horario a las 09:00')}`,
                 'warning'
               );
               this.finalizarYRecargarTodo();
@@ -865,7 +1457,7 @@ export class DashboardClinicaComponent implements OnInit {
         } else {
           Swal.fire({
             title: '¡Expediente Guardado!',
-            text: 'La cita se marcó como Completada en PostgreSQL.',
+            text: 'La cita se marcó como Completada correctamente.',
             icon: 'success',
             timer: 2000,
             showConfirmButton: false
@@ -873,7 +1465,14 @@ export class DashboardClinicaComponent implements OnInit {
           this.finalizarYRecargarTodo();
         }
       },
-      error: (err) => Swal.fire('Error', this.extraerMensajeError(err, 'Ocurrió un problema al guardar la nota médica.'), 'error')
+      error: (err) => {
+        if (this.esErrorDeRed(err)) {
+          this.isOffline = true;
+          this.guardarConsultaOffline();
+        } else {
+          Swal.fire('Error', this.extraerMensajeError(err, 'Ocurrió un problema al guardar la nota médica.'), 'error');
+        }
+      }
     });
   }
 
@@ -974,17 +1573,21 @@ export class DashboardClinicaComponent implements OnInit {
   }
 
   ordenarInventario(event: any) {
-    const criterio = event.target.value;
-    if (criterio === 'mayor') this.inventarioFiltrado.sort((a, b) => b.cantidad - a.cantidad);
-    else if (criterio === 'menor') this.inventarioFiltrado.sort((a, b) => a.cantidad - b.cantidad);
-    else if (criterio === 'critico') this.inventarioFiltrado.sort((a, b) => (a.estado === 'Crítico' ? -1 : 1));
-    else this.aplicarFiltrosInventario();
+    this.criterioOrdenInventario = event.target.value;
+    this.aplicarFiltrosInventario();
   }
 
   aplicarFiltrosInventario() {
     this.inventarioFiltrado = this.inventario.filter(i =>
       (i.nombreProducto || '').toLowerCase().includes(this.terminoBusquedaInventario)
     );
+    if (this.criterioOrdenInventario === 'mayor') {
+      this.inventarioFiltrado.sort((a, b) => b.cantidad - a.cantidad);
+    } else if (this.criterioOrdenInventario === 'menor') {
+      this.inventarioFiltrado.sort((a, b) => a.cantidad - b.cantidad);
+    } else if (this.criterioOrdenInventario === 'critico') {
+      this.inventarioFiltrado.sort((a, b) => (a.estado === 'Crítico' ? -1 : 1));
+    }
   }
 
   // --- CRUD PERSONAL MÉDICO (/api/Usuarios) ---
@@ -1001,6 +1604,7 @@ export class DashboardClinicaComponent implements OnInit {
       password: '',
       rol: user.rol || 'Doctor',
       estado: user.estado || 'Activo',
+      colorAgenda: user.colorAgenda || this.obtenerColorDoctor(user.id),
       telefono: user.telefono || '',
       estudios: user.estudios || '',
       universidadEgreso: user.universidadEgreso || '',
@@ -1031,6 +1635,7 @@ export class DashboardClinicaComponent implements OnInit {
         correo: this.personalEditando.correo.trim().toLowerCase(),
         rol: this.personalEditando.rol,
         estado: this.personalEditando.estado || 'Activo',
+        colorAgenda: this.personalEditando.colorAgenda || '#2563eb',
         password: this.personalEditando.password?.trim() || null,
         telefono: this.personalEditando.telefono || null,
         estudios: this.personalEditando.estudios || null,
@@ -1055,6 +1660,7 @@ export class DashboardClinicaComponent implements OnInit {
         passwordHash: this.personalEditando.password,
         rol: this.personalEditando.rol,
         estado: 'Activo',
+        colorAgenda: this.personalEditando.colorAgenda || '#2563eb',
         telefono: this.personalEditando.telefono || null,
         estudios: this.personalEditando.estudios || null,
         universidadEgreso: this.personalEditando.universidadEgreso || null,
@@ -1068,7 +1674,7 @@ export class DashboardClinicaComponent implements OnInit {
           this.mostrarModalPersonal = false;
           Swal.fire({
             title: 'Personal Registrado',
-            text: 'Contraseña encriptada con BCrypt en PostgreSQL.',
+            text: 'Usuario creado con acceso seguro.',
             icon: 'success',
             timer: 1800,
             showConfirmButton: false
@@ -1129,7 +1735,11 @@ export class DashboardClinicaComponent implements OnInit {
     }
     for (let i = 1; i <= diasEnMes; i++) {
       const fechaStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const citasDelDia = this.todasLasCitas.filter(c => c.fechaLocalISO === fechaStr);
+      const citasDelDia = this.todasLasCitas.filter(
+        c =>
+          c.fechaLocalISO === fechaStr &&
+          (this.doctorFiltroAgenda === 0 || Number(c.doctorId) === Number(this.doctorFiltroAgenda))
+      );
       this.diasCalendario.push({ numero: i, inactivo: false, citas: citasDelDia, fechaCompleta: fechaStr });
     }
   }

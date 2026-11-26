@@ -1,5 +1,11 @@
-<div *ngIf="isOffline" style="background-color: #ef4444; color: white; text-align: center; padding: 10px; font-weight: bold; position: sticky; top: 0; z-index: 50;">
-  ⚠️ Estás trabajando sin conexión.
+<!-- ALERTA SUPERIOR DE CONEXIÓN / SINCRONIZACIÓN -->
+<div *ngIf="isOffline" class="connection-banner offline no-print">
+  ⚠️ Sin conexión a internet — Puedes seguir agendando citas y realizando consultas. Todo se guardará en este dispositivo y se subirá automáticamente al reconectar.
+  <span *ngIf="totalPendientesSync > 0" class="banner-badge">⏳ {{ totalPendientesSync }} pendiente(s)</span>
+</div>
+
+<div *ngIf="!isOffline && sincronizando" class="connection-banner syncing no-print">
+  🔄 Conexión recuperada — Subiendo {{ totalPendientesSync }} registro(s) pendiente(s) a la nube...
 </div>
 
 <div class="dashboard-wrapper">
@@ -26,7 +32,7 @@
 
     <div class="user-profile hidden-mobile" style="justify-content: space-between;">
       <div style="display: flex; align-items: center; gap: 0.8rem;">
-        <div class="avatar">{{ doctorActual.iniciales }}</div>
+        <div class="avatar" [style.background-color]="doctorActual.colorAgenda || '#2563eb'">{{ doctorActual.iniciales }}</div>
         <div class="info">
           <strong>{{ doctorActual.nombre }}</strong>
           <span>{{ doctorActual.especialidad }}</span>
@@ -49,7 +55,25 @@
         <span *ngIf="activeTab === 'personal'">Personal Médico y Recepción</span>
       </h1>
       <div class="actions">
-        <button class="btn-sync" (click)="cargarDatosReales()" style="cursor: pointer;">☁️ Sincronizado (PostgreSQL)</button>
+        <button
+          class="btn-sync"
+          [ngClass]="{
+            'btn-sync-offline': isOffline,
+            'btn-sync-working': !isOffline && sincronizando,
+            'btn-sync-pending': !isOffline && !sincronizando && totalPendientesSync > 0
+          }"
+          (click)="manejarClickSincronizacion()"
+          style="cursor: pointer;">
+          <span *ngIf="isOffline">⚠️ Sin conexión<span *ngIf="totalPendientesSync > 0"> ({{ totalPendientesSync }} pendientes)</span></span>
+          <span *ngIf="!isOffline && sincronizando">🔄 Sincronizando...</span>
+          <span *ngIf="!isOffline && !sincronizando && totalPendientesSync > 0">⏳ {{ totalPendientesSync }} pendiente(s) — Subir ahora</span>
+          <span *ngIf="!isOffline && !sincronizando && totalPendientesSync === 0">☁️ Sincronizado</span>
+        </button>
+
+        <div class="only-mobile" style="gap: 0.4rem;">
+          <button (click)="mostrarModalConfig = true" title="Ajustes de la Clínica" class="btn-small">⚙️</button>
+          <button (click)="cerrarSesion()" title="Cerrar Sesión" class="btn-small" style="color: #dc2626;">🚪</button>
+        </div>
       </div>
     </header>
 
@@ -80,9 +104,14 @@
               <strong>
                 {{ cita.pacienteNombre }}
                 <small style="color: #64748b;">({{ cita.curpPaciente || 'Sin CURP' }})</small>
-                <small *ngIf="cita.folio" style="margin-left: 6px; color: #2563eb;">#{{ cita.folio }}</small>
+                <small *ngIf="cita.folio && !cita.pendienteSync" style="margin-left: 6px; color: #2563eb;">#{{ cita.folio }}</small>
+                <span *ngIf="cita.pendienteSync" class="sync-chip pending" style="margin-left: 6px;">⏳ Esperando internet</span>
               </strong>
-              <span class="telefono">{{ cita.motivo }} — Dr(a). {{ cita.nombreDoctor }}</span>
+              <span class="telefono">
+                {{ cita.motivo }} —
+                <span class="doctor-dot" [style.background-color]="cita.colorDoctor"></span>
+                Dr(a). {{ cita.nombreDoctor }}
+              </span>
             </div>
             <div class="badge" [ngClass]="{'badge-green': cita.estado === 'Completada', 'badge-gray': cita.estado === 'Cancelada', 'badge-yellow': cita.estado !== 'Completada' && cita.estado !== 'Cancelada'}">
               {{ cita.estado }}
@@ -101,17 +130,29 @@
 
           <h4 style="color: #64748b; font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase;">Citas del {{ fechaFiltroAgenda }}</h4>
           <div style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 440px; overflow-y: auto;">
-            <div *ngFor="let cita of citasFiltradasAgenda" style="padding: 0.8rem; background: #f8fafc; border-radius: 8px;" [style.border-left]="'4px solid ' + (cita.estado === 'Completada' ? '#10b981' : cita.estado === 'Cancelada' ? '#94a3b8' : '#3b82f6')">
+            <div
+              *ngFor="let cita of citasFiltradasAgenda"
+              class="agenda-card-item"
+              [class.cita-offline-card]="cita.pendienteSync"
+              style="padding: 0.8rem; background: #f8fafc; border-radius: 8px;"
+              [style.border-left]="'4px solid ' + cita.colorDoctor">
               <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
                 <strong style="color: #1e293b;">{{ cita.pacienteNombre }}</strong>
                 <span style="font-size: 0.72rem; padding: 2px 6px; border-radius: 4px;" [style.background]="cita.estado === 'Completada' ? '#d1fae5' : cita.estado === 'Cancelada' ? '#e2e8f0' : '#fef3c7'">{{ cita.estado }}</span>
               </div>
-              <small *ngIf="cita.folio" style="display: block; color: #2563eb; font-weight: 600; font-size: 0.72rem;">Folio: {{ cita.folio }}</small>
-              <span style="font-size: 0.85rem; color: #64748b;">🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} | {{ cita.nombreDoctor }}</span>
+              <div *ngIf="cita.pendienteSync" class="sync-chip pending" style="margin: 0.35rem 0;">
+                ⏳ Guardada sin internet — esperando conexión
+              </div>
+              <small *ngIf="cita.folio && !cita.pendienteSync" style="display: block; color: #2563eb; font-weight: 600; font-size: 0.72rem;">Folio: {{ cita.folio }}</small>
+              <span style="font-size: 0.85rem; color: #64748b; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} |
+                <span class="doctor-dot" [style.background-color]="cita.colorDoctor"></span>
+                {{ cita.nombreDoctor }}
+              </span>
               <p style="margin: 0.2rem 0 0.5rem 0; font-size: 0.8rem; color: #334155;">{{ cita.motivo }}</p>
               <div style="display: flex; gap: 0.4rem;">
                 <button *ngIf="cita.estado !== 'Completada' && cita.estado !== 'Cancelada'" class="btn-small" style="flex: 1; background: #eff6ff; color: #2563eb; font-weight: 600;" (click)="iniciarConsultaDesdeCita(cita)">🩺 Consultar</button>
-                <button *ngIf="cita.estado !== 'Completada' && cita.estado !== 'Cancelada'" class="btn-small" style="color: #d97706;" title="Cancelar cita" (click)="cancelarCita(cita)">✖</button>
+                <button *ngIf="!cita.pendienteSync && cita.estado !== 'Completada' && cita.estado !== 'Cancelada'" class="btn-small" style="color: #d97706;" title="Cancelar cita" (click)="cancelarCita(cita)">✖</button>
                 <button class="btn-small" style="color: #dc2626;" title="Eliminar cita" (click)="eliminarCita(cita.id)">🗑️</button>
               </div>
             </div>
@@ -120,20 +161,52 @@
         </div>
 
         <div style="flex: 1; display: flex; flex-direction: column;">
-          <div class="toolbar agenda-toolbar">
+          <div class="toolbar agenda-toolbar" style="flex-direction: column; align-items: stretch; gap: 0.85rem;">
             <div class="month-controls" style="margin: 0 auto;">
               <button class="nav-btn" (click)="mesAnterior()">◀</button>
               <h3 style="min-width: 170px; text-align: center;">{{ mesActualTitulo }}</h3>
               <button class="nav-btn" (click)="mesSiguiente()">▶</button>
             </div>
+
+            <!-- LEYENDA Y FILTRO POR COLOR DE DOCTOR -->
+            <div class="doctor-legend">
+              <button
+                class="legend-pill"
+                [class.active]="doctorFiltroAgenda === 0"
+                (click)="seleccionarDoctorAgenda(0)">
+                👥 Todos los médicos
+              </button>
+              <button
+                *ngFor="let doc of listaDoctores"
+                class="legend-pill"
+                [class.active]="doctorFiltroAgenda === doc.id"
+                [style.border-color]="doctorFiltroAgenda === doc.id ? doc.colorAgenda : ''"
+                (click)="seleccionarDoctorAgenda(doc.id)">
+                <span class="doctor-dot" [style.background-color]="doc.colorAgenda"></span>
+                {{ doc.nombre }}
+              </button>
+            </div>
           </div>
+
           <div class="calendar-container fade-in" style="flex: 1; min-height: 500px;">
             <div class="calendar-header"><div>DOM</div><div>LUN</div><div>MAR</div><div>MIÉ</div><div>JUE</div><div>VIE</div><div>SÁB</div></div>
             <div class="calendar-grid">
               <div class="calendar-cell" *ngFor="let dia of diasCalendario" [ngClass]="{'inactive': dia.inactivo}" (click)="!dia.inactivo && filtrarAgendaPorDia(dia.fechaCompleta)">
                 <span class="day-number" *ngIf="dia.numero">{{ dia.numero }}</span>
                 <div class="events-container">
-                  <div class="event-pill" *ngFor="let cita of dia.citas" [style.background-color]="cita.estado === 'Completada' ? '#10b981' : cita.estado === 'Cancelada' ? '#94a3b8' : '#3b82f6'" title="{{cita.motivo}}">
+                  <div
+                    class="event-pill"
+                    *ngFor="let cita of dia.citas"
+                    [style.background-color]="cita.colorDoctor"
+                    [ngClass]="{
+                      'pill-cancelada': cita.estado === 'Cancelada',
+                      'pill-completada': cita.estado === 'Completada',
+                      'pill-offline': cita.pendienteSync
+                    }"
+                    title="{{ cita.pendienteSync ? '⏳ Esperando internet · ' : '' }}{{ cita.nombreDoctor }} — {{ cita.motivo }} ({{ cita.estado }})">
+                    <span *ngIf="cita.pendienteSync" class="clock-pulse">⏳ </span>
+                    <span *ngIf="!cita.pendienteSync && cita.estado === 'Completada'">✅ </span>
+                    <span *ngIf="!cita.pendienteSync && cita.estado === 'Cancelada'">✖ </span>
                     <span class="time">{{ cita.fechaHoraSegura | date:'shortTime' }}</span> {{ cita.pacienteNombre }}
                   </div>
                 </div>
@@ -151,7 +224,7 @@
             <div style="display: flex; gap: 1rem; align-items: center; width: 100%;">
               <strong style="color: #1e293b; min-width: max-content;">Seleccionar Paciente del Directorio:</strong>
               <input type="text" [(ngModel)]="terminoBusquedaPaciente" (input)="filtrarPacientes()" placeholder="🔍 Buscar por nombre o CURP..." class="form-input" style="flex: 1;">
-              <button class="btn-primary" (click)="abrirModalNuevoPaciente()">+ Registrar Nuevo Paciente</button>
+              <button class="btn-primary" (click)="abrirModalNuevoPaciente()" [disabled]="isOffline" [title]="isOffline ? 'Conéctate a internet para dar de alta pacientes nuevos' : ''">+ Registrar Nuevo Paciente</button>
             </div>
           </div>
 
@@ -162,7 +235,10 @@
                 <div class="avatar">👤</div>
                 <div>
                   <h4>{{ cita.pacienteNombre }}</h4>
-                  <p>🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} — {{ cita.estado }}</p>
+                  <p>
+                    🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} — {{ cita.estado }}
+                    <span *ngIf="cita.pendienteSync" class="sync-chip pending" style="margin-left: 4px;">⏳ Local</span>
+                  </p>
                 </div>
               </div>
               <p style="font-size: 0.9rem; color: #475569; margin-bottom: 1rem;"><strong>Motivo:</strong> {{ cita.motivo }}</p>
@@ -204,7 +280,9 @@
           <div class="receta-actions no-print" style="margin-bottom: 1.5rem; display: flex; gap: 1rem;">
             <button class="btn-outline" (click)="terminarConsulta()">← Cambiar Paciente</button>
             <div style="display: flex; gap: 0.5rem; margin-left: auto;">
-              <button class="btn-success" (click)="guardarConsultaCompleta()">✅ Guardar Expediente y Completar Cita</button>
+              <button class="btn-success" (click)="guardarConsultaCompleta()">
+                {{ isOffline ? '⏳ Guardar Localmente (Sin Internet)' : '✅ Guardar Expediente y Completar Cita' }}
+              </button>
               <button class="btn-primary" (click)="imprimirReceta()">🖨️ Imprimir Receta</button>
             </div>
           </div>
@@ -240,6 +318,7 @@
                 <h4>Consultas Previas ({{ historialPacienteActual.length }})</h4>
                 <ul *ngIf="historialPacienteActual.length">
                   <li *ngFor="let h of historialPacienteActual | slice:0:4" (click)="abrirDetalleConsulta(h)" style="cursor: pointer;">
+                    <span *ngIf="h.pendienteSync" title="Esperando internet">⏳ </span>
                     <strong>{{ h.fechaConsultaSegura | date:'shortDate' }}:</strong> {{ h.diagnostico }} ({{ h.codigoCIE10 }})
                   </li>
                 </ul>
@@ -359,7 +438,7 @@
           <button class="btn-outline" (click)="exportarHistorialCSV()">⬇️ Exportar CSV</button>
         </div>
 
-        <div class="recent-section" style="padding: 0; overflow: hidden;">
+        <div class="recent-section table-scroll" style="padding: 0;">
           <table class="data-table">
             <thead>
               <tr>
@@ -367,11 +446,12 @@
                 <th>Paciente Atendido</th>
                 <th>Médico</th>
                 <th>Diagnóstico (CIE-10)</th>
+                <th>Estado</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let con of consultasFiltradas">
+              <tr *ngFor="let con of consultasFiltradas" [class.row-pending-sync]="con.pendienteSync">
                 <td><strong>{{ con.fechaConsultaSegura | date:'shortDate' }}</strong></td>
                 <td><strong>{{ con.pacienteNombre }}</strong></td>
                 <td>{{ con.nombreDoctor || doctorActual.nombre }}</td>
@@ -379,9 +459,17 @@
                   <span style="color: #be123c; font-weight: 600;">{{ con.diagnostico }}</span>
                   <span *ngIf="con.codigoCIE10" style="margin-left: 6px; background: #e0e7ff; color: #1d4ed8; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold;">{{ con.codigoCIE10 }}</span>
                 </td>
+                <td>
+                  <span *ngIf="con.pendienteSync" class="sync-chip pending" title="Guardado en este dispositivo. Se subirá automáticamente al recuperar el internet.">
+                    <span class="clock-pulse">⏳</span> Esperando internet
+                  </span>
+                  <span *ngIf="!con.pendienteSync" class="sync-chip synced">
+                    ✅ En la nube
+                  </span>
+                </td>
                 <td><button class="btn-detalle" (click)="abrirDetalleConsulta(con)">🔍 Ver Expediente</button></td>
               </tr>
-              <tr *ngIf="!consultasFiltradas.length"><td colspan="5" style="text-align:center; padding: 2rem;">No hay consultas registradas.</td></tr>
+              <tr *ngIf="!consultasFiltradas.length"><td colspan="6" style="text-align:center; padding: 2rem;">No hay consultas registradas.</td></tr>
             </tbody>
           </table>
         </div>
@@ -391,9 +479,17 @@
       <div *ngIf="activeTab === 'pacientes'" class="view-pacientes fade-in">
         <div class="toolbar" style="justify-content: space-between;">
           <input type="text" [(ngModel)]="terminoBusquedaPaciente" (input)="filtrarPacientes()" placeholder="🔍 Buscar por nombre, apellidos, CURP o teléfono..." class="search-input" style="max-width: 450px; width: 100%;">
-          <button class="btn-primary" (click)="abrirModalNuevoPaciente()">+ Nuevo Expediente de Paciente</button>
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <div class="view-toggle">
+              <button [class.active]="vistaPacientes === 'tarjetas'" (click)="vistaPacientes = 'tarjetas'">⊞ Tarjetas</button>
+              <button [class.active]="vistaPacientes === 'lista'" (click)="vistaPacientes = 'lista'">☰ Lista</button>
+            </div>
+            <button class="btn-primary" (click)="abrirModalNuevoPaciente()">+ Nuevo Expediente de Paciente</button>
+          </div>
         </div>
-        <div class="pacientes-grid">
+
+        <!-- MODO TARJETAS -->
+        <div class="pacientes-grid" *ngIf="vistaPacientes === 'tarjetas'">
           <div class="paciente-card" *ngFor="let paciente of pacientesFiltrados">
             <div class="card-header">
               <div class="avatar">👤</div>
@@ -416,24 +512,66 @@
             </div>
           </div>
         </div>
+
+        <!-- MODO LISTA -->
+        <div class="recent-section table-scroll" *ngIf="vistaPacientes === 'lista'" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Paciente</th>
+                <th>CURP</th>
+                <th>Teléfono</th>
+                <th>Edad / Sexo</th>
+                <th>Alergias</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let paciente of pacientesFiltrados">
+                <td><strong>{{ paciente.nombreCompleto }}</strong></td>
+                <td>{{ paciente.curp }}</td>
+                <td>{{ paciente.telefono || 'S/N' }}</td>
+                <td>{{ paciente.edad }} años · {{ paciente.sexo }}</td>
+                <td>
+                  <span [ngClass]="{'text-red': paciente.alergias && paciente.alergias !== 'Ninguna'}">{{ paciente.alergias }}</span>
+                </td>
+                <td>
+                  <div class="table-actions">
+                    <button class="btn-small" style="background: #eff6ff; color: #2563eb; font-weight: 600;" (click)="iniciarConsultaDesdePaciente(paciente)">🩺 Consultar</button>
+                    <button class="btn-small" (click)="abrirModalEditarPaciente(paciente)">Editar</button>
+                    <button class="btn-small" style="color: #dc2626;" (click)="borrarPaciente(paciente.id)">🗑️</button>
+                  </div>
+                </td>
+              </tr>
+              <tr *ngIf="!pacientesFiltrados.length"><td colspan="6" style="text-align:center; padding: 2rem;">No hay pacientes registrados.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ================= VISTA 6: INVENTARIO ================= -->
       <div *ngIf="activeTab === 'inventario'" class="view-inventario fade-in">
         <div class="toolbar">
-          <div style="display: flex; gap: 1rem; align-items: center;">
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
             <input type="text" placeholder="Buscar insumo..." class="search-input" (input)="buscarInventario($event)">
-            <select class="form-input" style="width: auto; padding: 0.5rem;" (change)="ordenarInventario($event)">
+            <select class="form-input" style="width: auto; padding: 0.5rem;" [value]="criterioOrdenInventario" (change)="ordenarInventario($event)">
               <option value="defecto">Ordenar por...</option>
               <option value="mayor">Mayor a Menor stock</option>
               <option value="menor">Menor a Mayor stock</option>
               <option value="critico">Mostrar Críticos primero</option>
             </select>
           </div>
-          <button class="btn-primary" (click)="abrirModalNuevoProducto()">+ Agregar Insumo</button>
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <div class="view-toggle">
+              <button [class.active]="vistaInventario === 'tarjetas'" (click)="vistaInventario = 'tarjetas'">⊞ Tarjetas</button>
+              <button [class.active]="vistaInventario === 'lista'" (click)="vistaInventario = 'lista'">☰ Lista</button>
+            </div>
+            <button class="btn-primary" (click)="abrirModalNuevoProducto()">+ Agregar Insumo</button>
+          </div>
         </div>
 
-        <div class="inventory-grid">
+        <!-- MODO TARJETAS -->
+        <div class="inventory-grid" *ngIf="vistaInventario === 'tarjetas'">
           <div class="inventory-card" *ngFor="let item of inventarioFiltrado" [ngClass]="{'critical': item.estado === 'Crítico'}">
             <div class="card-head"><h4>{{ item.nombreProducto }}</h4><span class="icon">💊</span></div>
             <div class="card-body">
@@ -448,20 +586,63 @@
           </div>
           <p *ngIf="!inventarioFiltrado.length" style="color: #64748b; margin-top: 2rem;">No hay insumos registrados en el inventario.</p>
         </div>
+
+        <!-- MODO LISTA -->
+        <div class="recent-section table-scroll" *ngIf="vistaInventario === 'lista'" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Insumo / Medicamento</th>
+                <th>Stock</th>
+                <th>Estado</th>
+                <th>Caducidad</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of inventarioFiltrado" [style.background]="item.estado === 'Crítico' ? '#fef2f2' : ''">
+                <td><strong>💊 {{ item.nombreProducto }}</strong></td>
+                <td><strong>{{ item.cantidad }}</strong> <small style="color: #64748b;">{{ item.unidad }}</small></td>
+                <td>
+                  <span
+                    class="status-pill"
+                    [ngClass]="item.estado === 'Crítico' ? 'pill-critico' : 'pill-optimo'">
+                    {{ item.estado }}
+                  </span>
+                </td>
+                <td>{{ item.fechaCaducidad ? (item.fechaCaducidad | date:'shortDate') : 'Sin fecha' }}</td>
+                <td>
+                  <div class="table-actions">
+                    <button class="btn-small" (click)="abrirModalEditarProducto(item)">Editar</button>
+                    <button class="btn-small" style="color: #dc2626;" (click)="borrarProducto(item.id)">Borrar</button>
+                  </div>
+                </td>
+              </tr>
+              <tr *ngIf="!inventarioFiltrado.length"><td colspan="5" style="text-align:center; padding: 2rem;">No hay insumos registrados en el inventario.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ================= VISTA 7: PERSONAL MÉDICO (/api/Usuarios) ================= -->
       <div *ngIf="activeTab === 'personal'" class="view-personal fade-in">
         <div class="toolbar" style="justify-content: space-between;">
           <h3 style="margin: 0; color: #475569;">Especialistas y Recepcionistas ({{ listaPersonal.length }})</h3>
-          <button class="btn-primary" (click)="abrirModalNuevoPersonal()">+ Registrar Personal (BCrypt)</button>
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <div class="view-toggle">
+              <button [class.active]="vistaPersonal === 'tarjetas'" (click)="vistaPersonal = 'tarjetas'">⊞ Tarjetas</button>
+              <button [class.active]="vistaPersonal === 'lista'" (click)="vistaPersonal = 'lista'">☰ Lista</button>
+            </div>
+            <button class="btn-primary" (click)="abrirModalNuevoPersonal()">+ Registrar Personal</button>
+          </div>
         </div>
 
-        <div class="staff-list">
-          <div class="staff-card" *ngFor="let user of listaPersonal" [style.opacity]="user.estado === 'Suspendido' ? '0.7' : '1'">
+        <!-- MODO TARJETAS -->
+        <div class="staff-list" *ngIf="vistaPersonal === 'tarjetas'">
+          <div class="staff-card" *ngFor="let user of listaPersonal" [style.opacity]="user.estado === 'Suspendido' ? '0.7' : '1'" [style.border-top]="'4px solid ' + (user.colorAgenda || '#2563eb')">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
               <div style="display: flex; align-items: center; gap: 1rem;">
-                <div style="width: 48px; height: 48px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem;">
+                <div style="width: 48px; height: 48px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem;" [style.background-color]="user.colorAgenda || '#2563eb'">
                   {{ user.rol === 'Doctor' ? '👨‍⚕️' : '💼' }}
                 </div>
                 <div>
@@ -500,6 +681,46 @@
             </div>
           </div>
         </div>
+
+        <!-- MODO LISTA -->
+        <div class="recent-section table-scroll" *ngIf="vistaPersonal === 'lista'" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Rol</th>
+                <th>Correo</th>
+                <th>Teléfono / Cédula</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let user of listaPersonal" [style.opacity]="user.estado === 'Suspendido' ? '0.65' : '1'">
+                <td>
+                  <span class="doctor-dot" [style.background-color]="user.colorAgenda || '#2563eb'"></span>
+                  <strong>{{ user.nombre }}</strong>
+                </td>
+                <td>{{ user.rol }}</td>
+                <td>{{ user.correo }}</td>
+                <td>{{ user.telefono || 'S/N' }}<span *ngIf="user.cedulaProfesional"> · Céd. {{ user.cedulaProfesional }}</span></td>
+                <td>
+                  <span class="status-pill" [ngClass]="user.estado === 'Suspendido' ? 'pill-critico' : 'pill-optimo'">
+                    {{ user.estado || 'Activo' }}
+                  </span>
+                </td>
+                <td>
+                  <div class="table-actions">
+                    <button class="btn-small" (click)="abrirModalEditarPersonal(user)">Editar</button>
+                    <button *ngIf="user.estado !== 'Suspendido'" class="btn-small" style="color: #dc2626;" (click)="suspenderPersonal(user)">Suspender</button>
+                    <button *ngIf="user.estado === 'Suspendido'" class="btn-small" style="color: #059669;" (click)="activarPersonal(user)">Reactivar</button>
+                  </div>
+                </td>
+              </tr>
+              <tr *ngIf="!listaPersonal.length"><td colspan="6" style="text-align:center; padding: 2rem;">No hay personal registrado.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </div>
@@ -515,6 +736,10 @@
         <button class="close-btn" (click)="mostrarModalDetalleConsulta = false">✖</button>
       </div>
       <div class="modal-body" *ngIf="consultaSeleccionada">
+        <div *ngIf="consultaSeleccionada.pendienteSync" class="sync-chip pending" style="display: block; text-align: center; margin-bottom: 1rem; padding: 0.5rem;">
+          ⏳ Este expediente se guardó sin conexión y se subirá automáticamente al recuperar el internet.
+        </div>
+
         <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.8rem; margin-bottom: 1rem;">
           <div>
             <p style="color: #64748b; font-size: 0.8rem; margin: 0;">Paciente</p>
@@ -565,7 +790,7 @@
     </div>
   </div>
 
-  <!-- MODAL: CONFIG CLÍNICA (CONECTADO A /api/Clinicas) -->
+  <!-- MODAL: CONFIG CLÍNICA -->
   <div class="modal-overlay" *ngIf="mostrarModalConfig">
     <div class="modal-content fade-in-fast">
       <div class="modal-header"><h2>Ajustes de la Clínica</h2><button class="close-btn" (click)="mostrarModalConfig = false">✖</button></div>
@@ -574,7 +799,7 @@
         <div class="form-group"><label>Logo (Emoji)</label><input #clogo type="text" class="form-input" [value]="configClinica.logo"></div>
         <div class="form-group"><label>Dirección</label><input #cdir type="text" class="form-input" [value]="configClinica.direccion"></div>
         <div class="form-group"><label>Teléfono</label><input #ctel type="text" class="form-input" [value]="configClinica.telefono"></div>
-        <button class="btn-primary w-100" (click)="guardarConfiguracionClinica(cnombre.value, clogo.value, cdir.value, ctel.value)">Guardar en PostgreSQL</button>
+        <button class="btn-primary w-100" (click)="guardarConfiguracionClinica(cnombre.value, clogo.value, cdir.value, ctel.value)">Guardar Cambios</button>
       </div>
     </div>
   </div>
@@ -584,6 +809,9 @@
     <div class="modal-content fade-in-fast">
       <div class="modal-header"><h2>Agendar Nueva Cita</h2><button class="close-btn" (click)="cerrarModalCita()">✖</button></div>
       <div class="modal-body">
+        <div *ngIf="isOffline" class="sync-chip pending" style="display: block; margin-bottom: 1rem; padding: 0.5rem;">
+          ⏳ Modo sin conexión: esta cita se guardará en tu equipo y se subirá al reconectar.
+        </div>
         <div class="form-group">
           <label>Seleccionar Paciente</label>
           <select class="form-input" [(ngModel)]="nuevaCitaForm.pacienteId">
@@ -602,7 +830,7 @@
         </div>
         <div class="form-group"><label>Motivo de Consulta</label><input type="text" class="form-input" [(ngModel)]="nuevaCitaForm.motivoConsulta" placeholder="Ej. Dolor abdominal / Revisión"></div>
         <div class="form-group"><label>Notas de Recepción</label><input type="text" class="form-input" [(ngModel)]="nuevaCitaForm.notasRecepcion" placeholder="Opcional"></div>
-        <button class="btn-primary w-100" (click)="guardarNuevaCita()">Confirmar Cita</button>
+        <button class="btn-primary w-100" (click)="guardarNuevaCita()">{{ isOffline ? '⏳ Guardar Cita Localmente' : 'Confirmar Cita' }}</button>
       </div>
     </div>
   </div>
@@ -621,7 +849,7 @@
           <div class="form-group" style="flex: 1;"><label>Apellidos *</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.apellidos" placeholder="Ej. Gómez Ramírez"></div>
         </div>
         <div style="display: flex; gap: 1rem;">
-          <div class="form-group" style="flex: 1.5;"><label>CURP (18 caracteres) *</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.curp" placeholder="GORC850512HSRRMR01"></div>
+          <div class="form-group" style="flex: 1.5;"><label>CURP (18 caracteres) *</label><input type="text" maxlength="18" class="form-input" [(ngModel)]="pacienteEditando.curp" placeholder="GORC850512HSRRMR01"></div>
           <div class="form-group" style="flex: 1;">
             <label>Sexo *</label>
             <select class="form-input" [(ngModel)]="pacienteEditando.sexo">
@@ -649,7 +877,7 @@
         <div class="form-group"><label>Antecedentes No Patológicos (Tabaquismo, alcohol, hábitos)</label><input type="text" class="form-input" [(ngModel)]="pacienteEditando.antecedentesNoPatologicos" placeholder="Ej. Tabaquismo negado, actividad física regular"></div>
 
         <button class="btn-primary w-100" style="padding: 1rem;" (click)="guardarPacienteManual()">
-          {{ pacienteEditando.id ? 'Actualizar Expediente en PostgreSQL' : 'Guardar Expediente en PostgreSQL' }}
+          {{ pacienteEditando.id ? 'Actualizar Expediente' : 'Guardar Expediente' }}
         </button>
       </div>
     </div>
@@ -682,7 +910,7 @@
         <div class="form-group"><label>Nombre Completo *</label><input type="text" class="form-input" [(ngModel)]="personalEditando.nombre" placeholder="Dr. Roberto Sánchez"></div>
         <div class="form-group"><label>Correo Electrónico (Login) *</label><input type="email" class="form-input" [(ngModel)]="personalEditando.correo" placeholder="roberto@clinica.com"></div>
         <div class="form-group">
-          <label>{{ personalEditando.id ? 'Nueva Contraseña (opcional)' : 'Contraseña (BCrypt) *' }}</label>
+          <label>{{ personalEditando.id ? 'Nueva Contraseña (opcional)' : 'Contraseña *' }}</label>
           <input type="password" class="form-input" [(ngModel)]="personalEditando.password" [placeholder]="personalEditando.id ? 'Dejar vacía para no cambiar' : '••••••••'">
         </div>
         <div style="display: flex; gap: 1rem;">
@@ -696,6 +924,24 @@
           </div>
           <div class="form-group" style="flex: 1;"><label>Teléfono</label><input type="text" class="form-input" [(ngModel)]="personalEditando.telefono" placeholder="6441234567"></div>
         </div>
+
+        <!-- COLOR IDENTIFICADOR EN AGENDA -->
+        <div class="form-group">
+          <label>🎨 Color identificador en la Agenda</label>
+          <div class="color-palette-picker">
+            <button
+              type="button"
+              class="color-swatch"
+              *ngFor="let color of paletaColoresAgenda"
+              [style.background-color]="color"
+              [class.selected]="personalEditando.colorAgenda === color"
+              (click)="personalEditando.colorAgenda = color"
+              [title]="color">
+            </button>
+            <input type="color" class="color-custom-input" [(ngModel)]="personalEditando.colorAgenda" title="Elegir color personalizado">
+          </div>
+        </div>
+
         <div class="form-group" *ngIf="personalEditando.rol === 'Doctor'"><label>Especialidad / Estudios</label><input type="text" class="form-input" [(ngModel)]="personalEditando.estudios" placeholder="Médico Cirujano / Odontólogo"></div>
         <div class="form-group" *ngIf="personalEditando.rol === 'Doctor'"><label>Cédula Profesional</label><input type="text" class="form-input" [(ngModel)]="personalEditando.cedulaProfesional" placeholder="5164506"></div>
         <button class="btn-primary w-100" (click)="guardarPersonal()">
