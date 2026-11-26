@@ -1,0 +1,155 @@
+<div class="perfil-page">
+
+  <!-- BARRA SUPERIOR (SOLO SI ES ADMIN) -->
+  <header class="admin-topbar" *ngIf="esAdmin">
+    <button class="btn-outline" (click)="volverAlDashboard()">← Volver al Dashboard</button>
+    <div class="admin-controls">
+      <button class="btn-outline" (click)="vistaPreviaPaciente = !vistaPreviaPaciente">
+        {{ vistaPreviaPaciente ? '✏️ Volver a Modo Edición' : '👁️ Ver como Paciente' }}
+      </button>
+      <button *ngIf="modoEdicion" class="btn-primary" (click)="abrirModalEditarClinica()">
+        ⚙️ Editar Perfil de Clínica
+      </button>
+    </div>
+  </header>
+
+  <!-- LAYOUT DE 2 COLUMNAS (SEGÚN TU BOCETO) -->
+  <div class="perfil-grid">
+
+    <!-- ================= COLUMNA IZQUIERDA ================= -->
+    <aside class="perfil-sidebar">
+      <!-- 1. LOGO Y NOMBRE -->
+      <div class="card logo-card">
+        <div class="logo-box">
+          <img *ngIf="esUrlImagen(clinica.logo)" [src]="clinica.logo" [alt]="clinica.nombre">
+          <span *ngIf="!esUrlImagen(clinica.logo)" class="logo-emoji">{{ clinica.logo || '🏥' }}</span>
+        </div>
+        <h1>{{ clinica.nombre }}</h1>
+        <p class="tel" *ngIf="clinica.telefono">📞 {{ clinica.telefono }}</p>
+      </div>
+
+      <!-- 2. RESUMEN DE ESPECIALIDADES (LOS 3 CIRCULITOS) -->
+      <div class="card mini-esp-card">
+        <h3>Especialidades</h3>
+        <div class="circulos-row">
+          <div class="esp-circle" *ngFor="let esp of especialidades | slice:0:3" [title]="esp.nombre">
+            {{ esp.icono }}
+          </div>
+          <span *ngIf="!especialidades.length" class="muted">Sin especialidades aún</span>
+        </div>
+      </div>
+
+      <!-- 3. DESCRIPCIÓN -->
+      <div class="card desc-card">
+        <h3>Descripción</h3>
+        <p>{{ clinica.descripcion || 'Clínica comprometida con tu salud y bienestar.' }}</p>
+      </div>
+
+      <!-- 4. UBICACIÓN / ESPACIO PARA GOOGLE MAPS API -->
+      <div class="card map-card">
+        <h3>📍 Ubicación</h3>
+        <p class="direccion">{{ clinica.direccion || 'Dirección no registrada' }}</p>
+        <div class="map-placeholder">
+          <span>🗺️</span>
+          <strong>Google Maps API</strong>
+          <small>Espacio reservado para el mapa interactivo</small>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ================= COLUMNA DERECHA ================= -->
+    <section class="perfil-main">
+      <div class="main-header">
+        <h2>Especialidades</h2>
+        <span class="plan-badge" *ngIf="modoEdicion">
+          {{ especialidades.length }} / {{ clinica.limiteEspecialidades || 3 }} activas
+        </span>
+      </div>
+
+      <!-- TARJETAS DE ESPECIALIDADES -->
+      <div class="especialidades-grid">
+        <div
+          class="esp-card"
+          *ngFor="let esp of especialidades"
+          [class.proximamente]="esp.estado !== 'Activa'">
+
+          <div class="esp-card-top">
+            <div class="esp-title">
+              <span class="esp-icon">{{ esp.icono }}</span>
+              <h3>{{ esp.nombre }}</h3>
+            </div>
+            <div class="esp-admin-btns" *ngIf="modoEdicion">
+              <button class="icon-btn" title="Editar" (click)="abrirModalEditarEspecialidad(esp)">✏️</button>
+              <button class="icon-btn danger" title="Eliminar" (click)="eliminarEspecialidad(esp)">🗑️</button>
+            </div>
+          </div>
+
+          <p class="esp-desc">{{ esp.descripcion || 'Atención profesional y seguimiento personalizado.' }}</p>
+
+          <button
+            class="btn-cita"
+            [disabled]="esp.estado !== 'Activa'"
+            (click)="solicitarCita(esp)">
+            {{ esp.estado === 'Activa' ? '📅 Agendar Cita' : '⏳ Próximamente' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- BOTÓN + PARA AGREGAR ESPECIALIDADES (SOLO ADMIN) -->
+      <div class="add-esp-wrapper" *ngIf="modoEdicion">
+        <button class="btn-add-esp" (click)="abrirModalNuevaEspecialidad()" title="Agregar especialidad">
+          <span class="plus">+</span>
+          <span>Agregar Especialidad</span>
+        </button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- MODAL: EDITAR PERFIL DE CLÍNICA -->
+  <div class="modal-overlay" *ngIf="mostrarModalClinica">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Clínica</h2>
+        <button class="close-btn" (click)="mostrarModalClinica = false">✖</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group"><label>Nombre de la Clínica *</label><input type="text" class="form-input" [(ngModel)]="clinicaForm.nombre"></div>
+        <div class="form-group"><label>Logo (Emoji o URL de imagen)</label><input type="text" class="form-input" [(ngModel)]="clinicaForm.logo" placeholder="🏥 o https://..."></div>
+        <div class="form-group"><label>Descripción</label><textarea class="form-input" rows="3" [(ngModel)]="clinicaForm.descripcion"></textarea></div>
+        <div class="form-group"><label>Dirección</label><input type="text" class="form-input" [(ngModel)]="clinicaForm.direccion"></div>
+        <div class="form-group"><label>Teléfono</label><input type="text" class="form-input" [(ngModel)]="clinicaForm.telefono"></div>
+        <button class="btn-primary w-100" (click)="guardarClinica()">Guardar Cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AGREGAR / EDITAR ESPECIALIDAD -->
+  <div class="modal-overlay" *ngIf="mostrarModalEspecialidad">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>{{ especialidadForm.id ? 'Editar Especialidad' : 'Nueva Especialidad' }}</h2>
+        <button class="close-btn" (click)="mostrarModalEspecialidad = false">✖</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group"><label>Nombre *</label><input type="text" class="form-input" [(ngModel)]="especialidadForm.nombre" placeholder="Ej. Dentista / Medicina General"></div>
+        <div class="form-group">
+          <label>Ícono</label>
+          <div class="icon-picker">
+            <button type="button" *ngFor="let ic of iconosSugeridos" [class.selected]="especialidadForm.icono === ic" (click)="especialidadForm.icono = ic">{{ ic }}</button>
+          </div>
+        </div>
+        <div class="form-group"><label>Descripción breve</label><textarea class="form-input" rows="3" [(ngModel)]="especialidadForm.descripcion" placeholder="Servicios que incluye..."></textarea></div>
+        <div class="form-group">
+          <label>Estado</label>
+          <select class="form-input" [(ngModel)]="especialidadForm.estado">
+            <option value="Activa">Activa (permite citas)</option>
+            <option value="Proximamente">Próximamente</option>
+          </select>
+        </div>
+        <button class="btn-primary w-100" (click)="guardarEspecialidad()">Guardar Especialidad</button>
+      </div>
+    </div>
+  </div>
+
+</div>
