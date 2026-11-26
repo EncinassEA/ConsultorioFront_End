@@ -60,13 +60,15 @@
         <div class="welcome-banner">
           <div class="welcome-text">
             <h2>¡Hola, {{ doctorActual.nombre }}! 👋</h2>
-            <p>Tienes <strong>{{ citasDeHoy.length }} citas registradas</strong> para el día de hoy.</p>
+            <p>Tienes <strong>{{ citasDeHoy.length }} citas registradas</strong> para el día de hoy y <strong>{{ estadisticasAdmin.citasPendientes }} pendientes</strong> en total.</p>
           </div>
         </div>
 
         <div class="stats-grid">
           <div class="stat-card"><div class="icon-bg blue">📅</div><div class="data"><h3>Citas Hoy</h3><h2>{{ citasDeHoy.length }}</h2></div></div>
+          <div class="stat-card"><div class="icon-bg blue">⏳</div><div class="data"><h3>Citas Pendientes</h3><h2>{{ estadisticasAdmin.citasPendientes }}</h2></div></div>
           <div class="stat-card"><div class="icon-bg green">✅</div><div class="data"><h3>Atendidos Hoy</h3><h2>{{ consultasDeHoy }}</h2></div></div>
+          <div class="stat-card"><div class="icon-bg green">🗂️</div><div class="data"><h3>Total Pacientes</h3><h2>{{ estadisticasAdmin.totalPacientes || directorioPacientes.length }}</h2></div></div>
           <div class="stat-card"><div class="icon-bg red">⚠️</div><div class="data"><h3>Faltantes Inventario</h3><h2>{{ inventarioCritico }}</h2></div></div>
         </div>
 
@@ -75,10 +77,14 @@
           <div class="cita-item" *ngFor="let cita of citasDeHoy">
             <div class="hora">{{ cita.fechaHoraSegura | date:'shortTime' }}</div>
             <div class="detalle">
-              <strong>{{ cita.pacienteNombre }} <small style="color: #64748b;">({{ cita.curpPaciente || 'Sin CURP' }})</small></strong>
+              <strong>
+                {{ cita.pacienteNombre }}
+                <small style="color: #64748b;">({{ cita.curpPaciente || 'Sin CURP' }})</small>
+                <small *ngIf="cita.folio" style="margin-left: 6px; color: #2563eb;">#{{ cita.folio }}</small>
+              </strong>
               <span class="telefono">{{ cita.motivo }} — Dr(a). {{ cita.nombreDoctor }}</span>
             </div>
-            <div class="badge" [ngClass]="{'badge-green': cita.estado === 'Completada', 'badge-yellow': cita.estado !== 'Completada'}">
+            <div class="badge" [ngClass]="{'badge-green': cita.estado === 'Completada', 'badge-gray': cita.estado === 'Cancelada', 'badge-yellow': cita.estado !== 'Completada' && cita.estado !== 'Cancelada'}">
               {{ cita.estado }}
             </div>
           </div>
@@ -88,21 +94,26 @@
 
       <!-- ================= VISTA 2: AGENDA Y CALENDARIO ================= -->
       <div *ngIf="activeTab === 'citas'" class="view-agenda fade-in" style="display: flex; gap: 1rem; height: 100%;">
-        <div class="agenda-sidebar" style="width: 300px; background: white; border-radius: 12px; padding: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); height: fit-content;">
+        <div class="agenda-sidebar" style="width: 310px; background: white; border-radius: 12px; padding: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); height: fit-content;">
           <h3 style="margin-bottom: 1rem; font-size: 1.1rem; color: #1e293b;">📅 Citas por Día</h3>
           <input type="date" class="form-input" style="width: 100%; margin-bottom: 1rem;" [value]="fechaFiltroAgenda" (change)="filtrarAgendaPorDia($any($event.target).value)">
           <button class="btn-primary w-100" style="margin-bottom: 1.5rem;" (click)="abrirModalAgendarCita()">+ Agendar Cita</button>
 
-          <h4 style="color: #64748b; font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase;">Citas del {{ fechaFiltroAgenda | date:'shortDate' }}</h4>
-          <div style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 400px; overflow-y: auto;">
-            <div *ngFor="let cita of citasFiltradasAgenda" style="padding: 0.8rem; background: #f8fafc; border-radius: 8px; border-left: 4px solid #3b82f6;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h4 style="color: #64748b; font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase;">Citas del {{ fechaFiltroAgenda }}</h4>
+          <div style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 440px; overflow-y: auto;">
+            <div *ngFor="let cita of citasFiltradasAgenda" style="padding: 0.8rem; background: #f8fafc; border-radius: 8px;" [style.border-left]="'4px solid ' + (cita.estado === 'Completada' ? '#10b981' : cita.estado === 'Cancelada' ? '#94a3b8' : '#3b82f6')">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
                 <strong style="color: #1e293b;">{{ cita.pacienteNombre }}</strong>
-                <span style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;" [style.background]="cita.estado === 'Completada' ? '#d1fae5' : '#fef3c7'">{{ cita.estado }}</span>
+                <span style="font-size: 0.72rem; padding: 2px 6px; border-radius: 4px;" [style.background]="cita.estado === 'Completada' ? '#d1fae5' : cita.estado === 'Cancelada' ? '#e2e8f0' : '#fef3c7'">{{ cita.estado }}</span>
               </div>
+              <small *ngIf="cita.folio" style="display: block; color: #2563eb; font-weight: 600; font-size: 0.72rem;">Folio: {{ cita.folio }}</small>
               <span style="font-size: 0.85rem; color: #64748b;">🕒 {{ cita.fechaHoraSegura | date:'shortTime' }} | {{ cita.nombreDoctor }}</span>
               <p style="margin: 0.2rem 0 0.5rem 0; font-size: 0.8rem; color: #334155;">{{ cita.motivo }}</p>
-              <button *ngIf="cita.estado !== 'Completada'" class="btn-small" style="width: 100%; background: #eff6ff; color: #2563eb; font-weight: 600;" (click)="iniciarConsultaDesdeCita(cita)">🩺 Iniciar Consulta</button>
+              <div style="display: flex; gap: 0.4rem;">
+                <button *ngIf="cita.estado !== 'Completada' && cita.estado !== 'Cancelada'" class="btn-small" style="flex: 1; background: #eff6ff; color: #2563eb; font-weight: 600;" (click)="iniciarConsultaDesdeCita(cita)">🩺 Consultar</button>
+                <button *ngIf="cita.estado !== 'Completada' && cita.estado !== 'Cancelada'" class="btn-small" style="color: #d97706;" title="Cancelar cita" (click)="cancelarCita(cita)">✖</button>
+                <button class="btn-small" style="color: #dc2626;" title="Eliminar cita" (click)="eliminarCita(cita.id)">🗑️</button>
+              </div>
             </div>
             <p *ngIf="!citasFiltradasAgenda.length" style="color: #94a3b8; font-size: 0.9rem; text-align: center; padding: 1rem 0;">No hay citas este día.</p>
           </div>
@@ -122,7 +133,7 @@
               <div class="calendar-cell" *ngFor="let dia of diasCalendario" [ngClass]="{'inactive': dia.inactivo}" (click)="!dia.inactivo && filtrarAgendaPorDia(dia.fechaCompleta)">
                 <span class="day-number" *ngIf="dia.numero">{{ dia.numero }}</span>
                 <div class="events-container">
-                  <div class="event-pill" *ngFor="let cita of dia.citas" [style.background-color]="cita.estado === 'Completada' ? '#10b981' : '#3b82f6'" title="{{cita.motivo}}">
+                  <div class="event-pill" *ngFor="let cita of dia.citas" [style.background-color]="cita.estado === 'Completada' ? '#10b981' : cita.estado === 'Cancelada' ? '#94a3b8' : '#3b82f6'" title="{{cita.motivo}}">
                     <span class="time">{{ cita.fechaHoraSegura | date:'shortTime' }}</span> {{ cita.pacienteNombre }}
                   </div>
                 </div>
@@ -155,7 +166,19 @@
                 </div>
               </div>
               <p style="font-size: 0.9rem; color: #475569; margin-bottom: 1rem;"><strong>Motivo:</strong> {{ cita.motivo }}</p>
-              <button class="btn-primary w-100" (click)="iniciarConsultaDesdeCita(cita)">Atender Cita y Llenar Expediente</button>
+              <button
+                *ngIf="cita.estado !== 'Completada' && cita.estado !== 'Cancelada'"
+                class="btn-primary w-100"
+                (click)="iniciarConsultaDesdeCita(cita)">
+                Atender Cita y Llenar Expediente
+              </button>
+              <button
+                *ngIf="cita.estado === 'Completada' || cita.estado === 'Cancelada'"
+                class="btn-outline w-100"
+                disabled
+                style="opacity: 0.6; cursor: not-allowed; margin-top: 0;">
+                {{ cita.estado === 'Completada' ? '✅ Cita Completada' : '✖ Cita Cancelada' }}
+              </button>
             </div>
             <p *ngIf="!citasDeHoy.length" style="color: #64748b;">No hay citas programadas para hoy. Puedes elegir un paciente del directorio abajo:</p>
           </div>
@@ -187,7 +210,7 @@
           </div>
 
           <div class="consulta-workarea">
-            <!-- PANEL LATERAL IZQUIERDO: ANTECEDENTES DEL PACIENTE (SECCIÓN 1 Y 2 DEL DUEÑO) -->
+            <!-- PANEL LATERAL IZQUIERDO: ANTECEDENTES DEL PACIENTE (SECCIÓN 1 Y 2) -->
             <aside class="historial-lateral no-print">
               <h3>📋 Antecedentes Clínicos</h3>
               <div style="margin-bottom: 1rem; padding: 0.8rem; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 0.5rem;">
@@ -304,7 +327,7 @@
 
                     <div class="treatment-section">
                       <label>Estudios Auxiliares Solicitados:</label>
-                      <input type="text" class="clean-input" [(ngModel)]="signosVitales.estudiosAuxiliares" placeholder=" Biometría hemática, Rayos X, o Ninguno">
+                      <input type="text" class="clean-input" [(ngModel)]="signosVitales.estudiosAuxiliares" placeholder="Biometría hemática, Rayos X, o Ninguno">
                     </div>
                   </div>
                 </div>
@@ -356,7 +379,7 @@
                   <span style="color: #be123c; font-weight: 600;">{{ con.diagnostico }}</span>
                   <span *ngIf="con.codigoCIE10" style="margin-left: 6px; background: #e0e7ff; color: #1d4ed8; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold;">{{ con.codigoCIE10 }}</span>
                 </td>
-                <td><button class="btn-small" style="background: #2563eb; color: white; font-weight: 600;" (click)="abrirDetalleConsulta(con)">🔍 Ver Expediente</button></td>
+                <td><button class="btn-detalle" (click)="abrirDetalleConsulta(con)">🔍 Ver Expediente</button></td>
               </tr>
               <tr *ngIf="!consultasFiltradas.length"><td colspan="5" style="text-align:center; padding: 2rem;">No hay consultas registradas.</td></tr>
             </tbody>
@@ -430,25 +453,51 @@
       <!-- ================= VISTA 7: PERSONAL MÉDICO (/api/Usuarios) ================= -->
       <div *ngIf="activeTab === 'personal'" class="view-personal fade-in">
         <div class="toolbar" style="justify-content: space-between;">
-          <h3 style="margin: 0; color: #475569;">Especialistas y Recepcionistas Activos ({{ listaPersonal.length }})</h3>
+          <h3 style="margin: 0; color: #475569;">Especialistas y Recepcionistas ({{ listaPersonal.length }})</h3>
           <button class="btn-primary" (click)="abrirModalNuevoPersonal()">+ Registrar Personal (BCrypt)</button>
         </div>
 
         <div class="staff-list">
-          <div class="staff-card" *ngFor="let user of listaPersonal">
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-              <div style="width: 48px; height: 48px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem;">
-                {{ user.rol === 'Doctor' ? '👨‍⚕️' : '💼' }}
+          <div class="staff-card" *ngFor="let user of listaPersonal" [style.opacity]="user.estado === 'Suspendido' ? '0.7' : '1'">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; gap: 1rem;">
+                <div style="width: 48px; height: 48px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem;">
+                  {{ user.rol === 'Doctor' ? '👨‍⚕️' : '💼' }}
+                </div>
+                <div>
+                  <h4 style="margin: 0; font-size: 1.1rem; color: #1e293b;">{{ user.nombre }}</h4>
+                  <span style="font-size: 0.8rem; background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 1rem; font-weight: 600;">{{ user.rol }}</span>
+                </div>
               </div>
-              <div>
-                <h4 style="margin: 0; font-size: 1.1rem; color: #1e293b;">{{ user.nombre }}</h4>
-                <span style="font-size: 0.8rem; background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 1rem; font-weight: 600;">{{ user.rol }}</span>
-              </div>
+              <span
+                style="font-size: 0.75rem; padding: 3px 9px; border-radius: 1rem; font-weight: 700;"
+                [style.background]="user.estado === 'Suspendido' ? '#fee2e2' : '#d1fae5'"
+                [style.color]="user.estado === 'Suspendido' ? '#b91c1c' : '#065f46'">
+                {{ user.estado || 'Activo' }}
+              </span>
             </div>
             <p style="margin: 0.3rem 0; font-size: 0.9rem; color: #475569;">📧 {{ user.correo }}</p>
             <p style="margin: 0.3rem 0; font-size: 0.9rem; color: #475569;">📞 {{ user.telefono || 'Sin teléfono' }}</p>
             <p *ngIf="user.estudios" style="margin: 0.3rem 0; font-size: 0.9rem; color: #475569;">🎓 {{ user.estudios }}</p>
             <p *ngIf="user.cedulaProfesional" style="margin: 0.3rem 0; font-size: 0.85rem; color: #059669; font-weight: 600;">Cédula: {{ user.cedulaProfesional }}</p>
+
+            <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+              <button class="btn-outline w-100" style="padding: 0.4rem; margin-top: 0;" (click)="abrirModalEditarPersonal(user)">Editar</button>
+              <button
+                *ngIf="user.estado !== 'Suspendido'"
+                class="btn-outline w-100"
+                style="padding: 0.4rem; margin-top: 0; color: #dc2626; border-color: #fca5a5;"
+                (click)="suspenderPersonal(user)">
+                Suspender
+              </button>
+              <button
+                *ngIf="user.estado === 'Suspendido'"
+                class="btn-success w-100"
+                style="padding: 0.4rem;"
+                (click)="activarPersonal(user)">
+                Reactivar
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -478,7 +527,6 @@
           </div>
         </div>
 
-        <!-- Resumen de Signos Vitales -->
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; background: #f8fafc; padding: 0.8rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem;">
           <div><strong>FC:</strong> {{ consultaSeleccionada.frecuenciaCardiaca || 'N/A' }}</div>
           <div><strong>FR:</strong> {{ consultaSeleccionada.frecuenciaRespiratoria || 'N/A' }}</div>
@@ -517,7 +565,7 @@
     </div>
   </div>
 
-  <!-- MODAL: CONFIG CLÍNICA -->
+  <!-- MODAL: CONFIG CLÍNICA (CONECTADO A /api/Clinicas) -->
   <div class="modal-overlay" *ngIf="mostrarModalConfig">
     <div class="modal-content fade-in-fast">
       <div class="modal-header"><h2>Ajustes de la Clínica</h2><button class="close-btn" (click)="mostrarModalConfig = false">✖</button></div>
@@ -526,7 +574,7 @@
         <div class="form-group"><label>Logo (Emoji)</label><input #clogo type="text" class="form-input" [value]="configClinica.logo"></div>
         <div class="form-group"><label>Dirección</label><input #cdir type="text" class="form-input" [value]="configClinica.direccion"></div>
         <div class="form-group"><label>Teléfono</label><input #ctel type="text" class="form-input" [value]="configClinica.telefono"></div>
-        <button class="btn-primary w-100" (click)="guardarConfiguracionClinica(cnombre.value, clogo.value, cdir.value, ctel.value)">Guardar</button>
+        <button class="btn-primary w-100" (click)="guardarConfiguracionClinica(cnombre.value, clogo.value, cdir.value, ctel.value)">Guardar en PostgreSQL</button>
       </div>
     </div>
   </div>
@@ -559,7 +607,7 @@
     </div>
   </div>
 
-  <!-- MODAL: PACIENTE (IDENTIFICACIÓN, SECCIÓN 1 Y SECCIÓN 2 DEL DUEÑO) -->
+  <!-- MODAL: PACIENTE (IDENTIFICACIÓN, SECCIÓN 1 Y SECCIÓN 2) -->
   <div class="modal-overlay" *ngIf="mostrarModalPaciente">
     <div class="modal-content fade-in-fast" style="max-width: 620px; max-height: 92vh; overflow-y: auto;">
       <div class="modal-header">
@@ -623,27 +671,36 @@
     </div>
   </div>
 
-  <!-- MODAL: NUEVO PERSONAL MÉDICO -->
+  <!-- MODAL: PERSONAL MÉDICO (NUEVO / EDITAR) -->
   <div class="modal-overlay" *ngIf="mostrarModalPersonal">
-    <div class="modal-content fade-in-fast">
-      <div class="modal-header"><h2>Registrar Personal Clínico</h2><button class="close-btn" (click)="mostrarModalPersonal = false">✖</button></div>
+    <div class="modal-content fade-in-fast" style="max-width: 460px; max-height: 92vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2>{{ personalEditando.id ? 'Editar Personal Clínico' : 'Registrar Personal Clínico' }}</h2>
+        <button class="close-btn" (click)="mostrarModalPersonal = false">✖</button>
+      </div>
       <div class="modal-body">
-        <div class="form-group"><label>Nombre Completo *</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.nombre" placeholder="Dr. Roberto Sánchez"></div>
-        <div class="form-group"><label>Correo Electrónico (Login) *</label><input type="email" class="form-input" [(ngModel)]="nuevoPersonal.correo" placeholder="roberto@clinica.com"></div>
-        <div class="form-group"><label>Contraseña (Se encriptará con BCrypt) *</label><input type="password" class="form-input" [(ngModel)]="nuevoPersonal.passwordHash" placeholder="••••••••"></div>
+        <div class="form-group"><label>Nombre Completo *</label><input type="text" class="form-input" [(ngModel)]="personalEditando.nombre" placeholder="Dr. Roberto Sánchez"></div>
+        <div class="form-group"><label>Correo Electrónico (Login) *</label><input type="email" class="form-input" [(ngModel)]="personalEditando.correo" placeholder="roberto@clinica.com"></div>
+        <div class="form-group">
+          <label>{{ personalEditando.id ? 'Nueva Contraseña (opcional)' : 'Contraseña (BCrypt) *' }}</label>
+          <input type="password" class="form-input" [(ngModel)]="personalEditando.password" [placeholder]="personalEditando.id ? 'Dejar vacía para no cambiar' : '••••••••'">
+        </div>
         <div style="display: flex; gap: 1rem;">
           <div class="form-group" style="flex: 1;">
             <label>Rol</label>
-            <select class="form-input" [(ngModel)]="nuevoPersonal.rol">
+            <select class="form-input" [(ngModel)]="personalEditando.rol">
               <option value="Doctor">Doctor</option>
               <option value="Recepcionista">Recepcionista</option>
+              <option value="Admin">Admin</option>
             </select>
           </div>
-          <div class="form-group" style="flex: 1;"><label>Teléfono</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.telefono" placeholder="6441234567"></div>
+          <div class="form-group" style="flex: 1;"><label>Teléfono</label><input type="text" class="form-input" [(ngModel)]="personalEditando.telefono" placeholder="6441234567"></div>
         </div>
-        <div class="form-group" *ngIf="nuevoPersonal.rol === 'Doctor'"><label>Especialidad / Estudios</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.estudios" placeholder="Médico Cirujano / Odontólogo"></div>
-        <div class="form-group" *ngIf="nuevoPersonal.rol === 'Doctor'"><label>Cédula Profesional</label><input type="text" class="form-input" [(ngModel)]="nuevoPersonal.cedulaProfesional" placeholder="5164506"></div>
-        <button class="btn-primary w-100" (click)="guardarPersonal()">Registrar Usuario</button>
+        <div class="form-group" *ngIf="personalEditando.rol === 'Doctor'"><label>Especialidad / Estudios</label><input type="text" class="form-input" [(ngModel)]="personalEditando.estudios" placeholder="Médico Cirujano / Odontólogo"></div>
+        <div class="form-group" *ngIf="personalEditando.rol === 'Doctor'"><label>Cédula Profesional</label><input type="text" class="form-input" [(ngModel)]="personalEditando.cedulaProfesional" placeholder="5164506"></div>
+        <button class="btn-primary w-100" (click)="guardarPersonal()">
+          {{ personalEditando.id ? 'Guardar Cambios' : 'Registrar Usuario' }}
+        </button>
       </div>
     </div>
   </div>

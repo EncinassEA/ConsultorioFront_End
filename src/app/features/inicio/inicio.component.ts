@@ -20,52 +20,52 @@ export class InicioComponent {
   private apiLoginUrl = 'https://localhost:7290/api/Usuarios/login';
 
   listaEspecialidades = [
-    'Odontología', 'Pediatría', 'Ginecología', 'Oftalmología', 
+    'Odontología', 'Pediatría', 'Ginecología', 'Oftalmología',
     'Dermatología', 'Medicina General', 'Ortopedia', 'Cardiología'
   ];
 
   consultorios = [
-    { 
-      nombre: 'Centro Médico Integral Sur', 
-      direccion: 'Blvd. Rodolfo Elías Calles 542', 
-      especialidades: ['Medicina General', 'Pediatría'], 
-      especialistas: 5, 
-      calificacion: 4.9, 
-      resenas: 120, 
-      estado: 'Abierto', 
+    {
+      nombre: 'Centro Médico Integral Sur',
+      direccion: 'Blvd. Rodolfo Elías Calles 542',
+      especialidades: ['Medicina General', 'Pediatría'],
+      especialistas: 5,
+      calificacion: 4.9,
+      resenas: 120,
+      estado: 'Abierto',
       theme: 'blue-theme',
       icono: '🏥'
     },
-    { 
-      nombre: 'Sonrisas Sanas Obregón', 
-      direccion: 'Calle California 312, Centro', 
-      especialidades: ['Ortodoncia', 'Odontopediatría'], 
-      especialistas: 3, 
-      calificacion: 5.0, 
-      resenas: 85, 
-      estado: 'Abierto', 
+    {
+      nombre: 'Sonrisas Sanas Obregón',
+      direccion: 'Calle California 312, Centro',
+      especialidades: ['Ortodoncia', 'Odontopediatría'],
+      especialistas: 3,
+      calificacion: 5.0,
+      resenas: 85,
+      estado: 'Abierto',
       theme: 'teal-theme',
       icono: '🦷'
     },
-    { 
-      nombre: 'Clínica Visión Clara', 
-      direccion: 'Plaza Tutuli, Local 12', 
-      especialidades: ['Oftalmología', 'Óptica'], 
-      especialistas: 2, 
-      calificacion: 4.8, 
-      resenas: 56, 
-      estado: 'Cerrado', 
+    {
+      nombre: 'Clínica Visión Clara',
+      direccion: 'Plaza Tutuli, Local 12',
+      especialidades: ['Oftalmología', 'Óptica'],
+      especialistas: 2,
+      calificacion: 4.8,
+      resenas: 56,
+      estado: 'Cerrado',
       theme: 'purple-theme',
       icono: '👁️'
     },
-    { 
-      nombre: 'CardioCare Sonora', 
-      direccion: 'Av. Miguel Alemán 900 Norte', 
-      especialidades: ['Cardiología', 'Medicina Interna'], 
-      especialistas: 4, 
-      calificacion: 4.9, 
-      resenas: 210, 
-      estado: 'Abierto', 
+    {
+      nombre: 'CardioCare Sonora',
+      direccion: 'Av. Miguel Alemán 900 Norte',
+      especialidades: ['Cardiología', 'Medicina Interna'],
+      especialistas: 4,
+      calificacion: 4.9,
+      resenas: 210,
+      estado: 'Abierto',
       theme: 'orange-theme',
       icono: '❤️'
     }
@@ -85,19 +85,21 @@ export class InicioComponent {
   }
 
   iniciarSesion() {
-    if (!this.credenciales.correo || !this.credenciales.password) {
+    const correoLimpio = this.credenciales.correo.trim().toLowerCase();
+    if (!correoLimpio || !this.credenciales.password) {
       Swal.fire('Campos incompletos', 'Por favor ingresa tu correo y contraseña.', 'warning');
       return;
     }
 
     this.cargandoLogin = true;
-    this.http.post(this.apiLoginUrl, this.credenciales, { responseType: 'text' }).subscribe({
+    const payload = { correo: correoLimpio, password: this.credenciales.password };
+
+    this.http.post(this.apiLoginUrl, payload, { responseType: 'text' }).subscribe({
       next: (token: string) => {
         this.cargandoLogin = false;
-        // Limpiamos comillas por si vienen en la respuesta y guardamos el JWT
         const tokenLimpio = token.replace(/"/g, '');
         localStorage.setItem('token_medical_staff', tokenLimpio);
-        localStorage.setItem('correo_usuario', this.credenciales.correo);
+        localStorage.setItem('correo_usuario', correoLimpio);
 
         this.mostrarModalLogin = false;
         Swal.fire({
@@ -110,9 +112,13 @@ export class InicioComponent {
           this.router.navigate(['/dashboard']);
         });
       },
-      error: () => {
+      error: (err) => {
         this.cargandoLogin = false;
-        Swal.fire('Acceso Denegado', 'Correo o contraseña incorrectos.', 'error');
+        let mensaje = 'Correo o contraseña incorrectos.';
+        if (typeof err?.error === 'string' && err.error.trim().length > 0) {
+          mensaje = err.error.replace(/^"|"$/g, '');
+        }
+        Swal.fire('Acceso Denegado', mensaje, 'error');
       }
     });
   }
