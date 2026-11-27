@@ -823,6 +823,10 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
     const idClinica = this.configClinica?.id > 0 ? this.configClinica.id : 1;
     this.router.navigate(['/clinica', idClinica]);
   }
+  esImagenLogo(valor: string | null | undefined): boolean {
+    if (!valor) return false;
+    return valor.startsWith('http://') || valor.startsWith('https://') || valor.startsWith('data:image/');
+  }
 
   cerrarSesion() {
     localStorage.removeItem('token_medical_staff');

@@ -1,4 +1,4 @@
-import { Component, OnInit, HostListener } from '@angular/core';
+import { Component, OnInit, HostListener, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -154,7 +154,11 @@ export class InicioComponent implements OnInit {
     }
   ];
 
-  constructor(private http: HttpClient, private router: Router) {}
+  constructor(
+    private http: HttpClient,
+    private router: Router,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   get esPaciente(): boolean {
     return !!this.usuarioLogueado && this.usuarioLogueado.rol.toLowerCase() === 'paciente';
@@ -273,6 +277,7 @@ export class InicioComponent implements OnInit {
             this.especialidadesDisponibles = res.especialidadesDisponibles;
           }
         }
+        this.cdr.detectChanges();
       },
       error: () => {}
     });
@@ -328,10 +333,12 @@ export class InicioComponent implements OnInit {
           }
         }
         this.aplicarFiltrosClinicas(false);
+        this.cdr.detectChanges();
       },
       error: () => {
         this.consultorios = [];
         this.consultoriosFiltrados = [];
+        this.cdr.detectChanges();
       }
     });
   }
@@ -470,33 +477,39 @@ export class InicioComponent implements OnInit {
 
   private cargarDatosTabPortal(tab: 'citas' | 'historial' | 'perfil') {
     this.cargandoPortal = true;
+    this.cdr.detectChanges();
 
     if (tab === 'citas') {
       this.http.get<any[]>(`${this.apiBase}/Citas/mis-citas`).subscribe({
         next: (lista) => {
-          this.cargandoPortal = false;
           this.misCitas = Array.isArray(lista) ? lista : [];
-        },
-        error: () => {
           this.cargandoPortal = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
           this.misCitas = [];
+          this.cargandoPortal = false;
+          this.cdr.detectChanges();
+          Swal.fire('Error al cargar citas', this.extraerError(err, 'No se pudieron obtener tus citas.'), 'warning');
         }
       });
     } else if (tab === 'historial') {
       this.http.get<any[]>(`${this.apiBase}/NotasMedicas/mi-historial`).subscribe({
         next: (lista) => {
-          this.cargandoPortal = false;
           this.miHistorial = Array.isArray(lista) ? lista : [];
-        },
-        error: () => {
           this.cargandoPortal = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
           this.miHistorial = [];
+          this.cargandoPortal = false;
+          this.cdr.detectChanges();
+          Swal.fire('Error al cargar historial', this.extraerError(err, 'No se pudo obtener tu historial.'), 'warning');
         }
       });
     } else if (tab === 'perfil') {
       this.http.get<any>(`${this.apiBase}/Pacientes/mi-perfil`).subscribe({
         next: (p) => {
-          this.cargandoPortal = false;
           this.miPerfilForm = {
             nombre: p.nombre || '',
             apellidos: p.apellidos || '',
@@ -508,9 +521,13 @@ export class InicioComponent implements OnInit {
             contactoEmergencia: p.contactoEmergencia || '',
             alergias: p.alergias || 'Ninguna'
           };
-        },
-        error: () => {
           this.cargandoPortal = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.cargandoPortal = false;
+          this.cdr.detectChanges();
+          Swal.fire('Error al cargar perfil', this.extraerError(err, 'No se pudo cargar tu perfil.'), 'warning');
         }
       });
     }
@@ -523,6 +540,8 @@ export class InicioComponent implements OnInit {
     }
 
     this.guardandoPerfil = true;
+    this.cdr.detectChanges();
+
     const payload = {
       nombre: this.miPerfilForm.nombre.trim(),
       apellidos: this.miPerfilForm.apellidos.trim(),
@@ -541,10 +560,12 @@ export class InicioComponent implements OnInit {
         if (this.usuarioLogueado) {
           this.usuarioLogueado = { ...this.usuarioLogueado, nombre: nuevoNombre };
         }
+        this.cdr.detectChanges();
         Swal.fire({ title: 'Perfil actualizado', icon: 'success', timer: 1400, showConfirmButton: false });
       },
       error: (err) => {
         this.guardandoPerfil = false;
+        this.cdr.detectChanges();
         Swal.fire('Error', this.extraerError(err, 'No se pudo actualizar tu perfil.'), 'error');
       }
     });
@@ -579,6 +600,7 @@ export class InicioComponent implements OnInit {
 
         this.mostrarModalLogin = false;
         this.credenciales = { correo: '', password: '' };
+        this.cdr.detectChanges();
 
         if (sesion.rol.toLowerCase() === 'paciente') {
           Swal.fire({
@@ -602,6 +624,7 @@ export class InicioComponent implements OnInit {
       },
       error: (err) => {
         this.cargandoLogin = false;
+        this.cdr.detectChanges();
         Swal.fire('Acceso Denegado', this.extraerError(err, 'Correo o contraseña incorrectos.'), 'error');
       }
     });
@@ -641,6 +664,7 @@ export class InicioComponent implements OnInit {
         }
         this.mostrarModalLogin = false;
         this.cargarEstadisticasPublicas();
+        this.cdr.detectChanges();
         Swal.fire({
           title: '¡Cuenta creada!',
           text: 'Tus datos quedaron listos para agendar citas en cualquier clínica.',
@@ -654,6 +678,7 @@ export class InicioComponent implements OnInit {
       },
       error: (err) => {
         this.cargandoLogin = false;
+        this.cdr.detectChanges();
         Swal.fire('No se pudo registrar', this.extraerError(err, 'Verifica los datos ingresados.'), 'error');
       }
     });
@@ -687,6 +712,7 @@ export class InicioComponent implements OnInit {
           this.guardarSesionDesdeToken(res.token, payload.correoAdmin);
         }
         this.mostrarModalRegistroClinica = false;
+        this.cdr.detectChanges();
         Swal.fire({
           title: `¡${res?.nombreClinica || 'Clínica'} registrada!`,
           text: `Tu plan ${res?.plan || c.plan} está activo. Entrando a tu panel administrativo...`,
@@ -699,6 +725,7 @@ export class InicioComponent implements OnInit {
       },
       error: (err) => {
         this.cargandoClinica = false;
+        this.cdr.detectChanges();
         Swal.fire('Error al registrar clínica', this.extraerError(err, 'No se pudo completar el registro.'), 'error');
       }
     });

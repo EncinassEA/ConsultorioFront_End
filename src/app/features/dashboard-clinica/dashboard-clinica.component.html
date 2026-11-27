@@ -14,7 +14,8 @@
   <nav class="sidebar">
     <div class="clinic-brand hidden-mobile" (click)="abrirPerfilClinica()" title="Ir al perfil y configuración de la clínica">
       <div class="clinic-logo">
-        {{ configClinica.logo }}
+        <img *ngIf="esImagenLogo(configClinica.logo)" [src]="configClinica.logo" [alt]="configClinica.nombre" class="clinic-logo-img">
+        <span *ngIf="!esImagenLogo(configClinica.logo)">{{ configClinica.logo || '🏥' }}</span>
       </div>
       <h2>{{ configClinica.nombre }}</h2>
       <button type="button" class="btn-clinic-panel" (click)="abrirPerfilClinica(); $event.stopPropagation()">
@@ -360,7 +361,11 @@
               <div class="receta-document">
                 <div class="receta-header">
                   <div class="logo-area">
-                    <h1><span>{{ configClinica.logo }}</span> {{ configClinica.nombre }}</h1>
+                    <h1>
+                      <img *ngIf="esImagenLogo(configClinica.logo)" [src]="configClinica.logo" [alt]="configClinica.nombre" class="receta-logo-img">
+                      <span *ngIf="!esImagenLogo(configClinica.logo)">{{ configClinica.logo || '🏥' }}</span>
+                      {{ configClinica.nombre }}
+                    </h1>
                     <p>{{ configClinica.direccion }}</p>
                     <p>Tel: {{ configClinica.telefono }}</p>
                   </div>

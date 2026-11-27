@@ -2145,4 +2145,18 @@ $border: #e2e8f0;
   .clean-input::placeholder {
     color: transparent !important;
   }
+  .clinic-logo-img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 0.85rem;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.receta-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+}
 }
