@@ -1,10 +1,10 @@
 <div class="perfil-page">
 
-  <!-- BARRA SUPERIOR (SOLO SI ES ADMIN) -->
-  <header class="admin-topbar" *ngIf="esAdmin">
+  <!-- BARRA SUPERIOR PARA ADMIN / STAFF -->
+  <header class="admin-topbar" *ngIf="esStaff">
     <button class="btn-outline" (click)="volverAlDashboard()">← Volver al Dashboard</button>
     <div class="admin-controls">
-      <button class="btn-outline" (click)="vistaPreviaPaciente = !vistaPreviaPaciente">
+      <button *ngIf="esAdmin" class="btn-outline" (click)="vistaPreviaPaciente = !vistaPreviaPaciente">
         {{ vistaPreviaPaciente ? '✏️ Volver a Modo Edición' : '👁️ Ver como Paciente' }}
       </button>
       <button *ngIf="modoEdicion" class="btn-primary" (click)="abrirModalEditarClinica()">
@@ -13,7 +13,23 @@
     </div>
   </header>
 
-  <!-- LAYOUT DE 2 COLUMNAS (SEGÚN TU BOCETO) -->
+  <!-- BARRA SUPERIOR PARA PACIENTES Y VISITANTES -->
+  <header class="admin-topbar" *ngIf="!esStaff">
+    <button class="btn-outline" (click)="volverAlInicio()">← Directorio de Clínicas</button>
+
+    <div class="admin-controls" *ngIf="esPaciente">
+      <button class="btn-outline" (click)="abrirMiPerfil()">👤 {{ nombreUsuario }}</button>
+      <button class="btn-outline" (click)="abrirMisCitas()">📅 Mis Citas</button>
+      <button class="btn-outline" (click)="abrirMiHistorial()">📋 Mi Historial</button>
+      <button class="btn-danger-outline" (click)="cerrarSesion()">Salir</button>
+    </div>
+
+    <div class="admin-controls" *ngIf="!esPaciente">
+      <button class="btn-primary" (click)="volverAlInicio()">🔒 Iniciar Sesión / Crear Cuenta</button>
+    </div>
+  </header>
+
+  <!-- LAYOUT DE 2 COLUMNAS -->
   <div class="perfil-grid">
 
     <!-- ================= COLUMNA IZQUIERDA ================= -->
@@ -28,7 +44,7 @@
         <p class="tel" *ngIf="clinica.telefono">📞 {{ clinica.telefono }}</p>
       </div>
 
-      <!-- 2. RESUMEN DE ESPECIALIDADES (LOS 3 CIRCULITOS) -->
+      <!-- 2. RESUMEN DE ESPECIALIDADES (CIRCULITOS) -->
       <div class="card mini-esp-card">
         <h3>Especialidades</h3>
         <div class="circulos-row">
@@ -60,9 +76,14 @@
     <!-- ================= COLUMNA DERECHA ================= -->
     <section class="perfil-main">
       <div class="main-header">
-        <h2>Especialidades</h2>
+        <div>
+          <h2>Especialidades</h2>
+          <small class="doctors-count" *ngIf="doctores.length">
+            👨‍⚕️ {{ doctores.length }} especialista(s) disponible(s)
+          </small>
+        </div>
         <span class="plan-badge" *ngIf="modoEdicion">
-          {{ especialidades.length }} / {{ clinica.limiteEspecialidades || 3 }} activas
+          Plan {{ clinica.plan || 'Basico' }} · {{ especialidades.length }} / {{ clinica.limiteEspecialidades || 3 }}
         </span>
       </div>
 
@@ -106,7 +127,153 @@
 
   </div>
 
-  <!-- MODAL: EDITAR PERFIL DE CLÍNICA -->
+  <!-- ================= MODAL: AGENDAR CITA (PACIENTE) ================= -->
+  <div class="modal-overlay" *ngIf="mostrarModalCita">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📅 Agendar en {{ especialidadSeleccionada?.nombre }}</h2>
+        <button class="close-btn" (click)="mostrarModalCita = false">✖</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Clínica: <strong>{{ clinica.nombre }}</strong><br>
+          Tus datos de paciente se enviarán automáticamente al consultorio.
+        </p>
+
+        <div class="form-group">
+          <label>Especialista / Médico *</label>
+          <select class="form-input" [(ngModel)]="citaForm.doctorId">
+            <option *ngFor="let doc of doctores" [value]="doc.id">
+              {{ doc.nombre }} {{ doc.estudios ? '— ' + doc.estudios : '' }}
+            </option>
+          </select>
+          <small *ngIf="!doctores.length" class="error-hint">Esta clínica aún no tiene médicos activos registrados.</small>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Fecha *</label>
+            <input type="date" class="form-input" [(ngModel)]="citaForm.fecha">
+          </div>
+          <div class="form-group">
+            <label>Hora *</label>
+            <input type="time" class="form-input" [(ngModel)]="citaForm.hora">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Motivo de la consulta *</label>
+          <input type="text" class="form-input" [(ngModel)]="citaForm.motivoConsulta" placeholder="Ej. Revisión general, dolor de muela, chequeo...">
+        </div>
+
+        <div class="form-group">
+          <label>Notas adicionales (opcional)</label>
+          <textarea class="form-input" rows="2" [(ngModel)]="citaForm.notasPaciente" placeholder="Síntomas previos o comentarios para recepción..."></textarea>
+        </div>
+
+        <button class="btn-primary w-100" [disabled]="enviandoCita || !doctores.length" (click)="confirmarSolicitudCita()">
+          {{ enviandoCita ? 'Enviando solicitud...' : 'Confirmar Solicitud de Cita' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: MI PERFIL (PACIENTE) ================= -->
+  <div class="modal-overlay" *ngIf="mostrarModalMiPerfil">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>👤 Mi Perfil de Paciente</h2>
+        <button class="close-btn" (click)="mostrarModalMiPerfil = false">✖</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row-2">
+          <div class="form-group"><label>Nombre(s) *</label><input type="text" class="form-input" [(ngModel)]="miPerfilForm.nombre"></div>
+          <div class="form-group"><label>Apellidos *</label><input type="text" class="form-input" [(ngModel)]="miPerfilForm.apellidos"></div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group"><label>CURP (solo lectura)</label><input type="text" class="form-input" [value]="miPerfilForm.curp" readonly></div>
+          <div class="form-group"><label>Teléfono</label><input type="text" maxlength="10" class="form-input" [(ngModel)]="miPerfilForm.telefono"></div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" class="form-input" [(ngModel)]="miPerfilForm.fechaNacimiento"></div>
+          <div class="form-group">
+            <label>Sexo</label>
+            <select class="form-input" [(ngModel)]="miPerfilForm.sexo">
+              <option value="Masculino">Masculino</option>
+              <option value="Femenino">Femenino</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label>Dirección</label><input type="text" class="form-input" [(ngModel)]="miPerfilForm.direccion"></div>
+        <div class="form-group"><label>Contacto de Emergencia</label><input type="text" class="form-input" [(ngModel)]="miPerfilForm.contactoEmergencia"></div>
+        <button class="btn-primary w-100" [disabled]="guardandoPerfil" (click)="guardarMiPerfil()">
+          {{ guardandoPerfil ? 'Guardando...' : 'Guardar Cambios' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: MIS CITAS (PACIENTE) ================= -->
+  <div class="modal-overlay" *ngIf="mostrarModalMisCitas">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>📅 Mis Citas</h2>
+        <button class="close-btn" (click)="mostrarModalMisCitas = false">✖</button>
+      </div>
+      <div class="modal-body">
+        <p *ngIf="cargandoMisCitas" class="empty-msg">Cargando tus citas...</p>
+        <p *ngIf="!cargandoMisCitas && !misCitas.length" class="empty-msg">Todavía no has agendado ninguna cita.</p>
+
+        <div class="portal-list" *ngIf="!cargandoMisCitas && misCitas.length">
+          <div class="portal-item" *ngFor="let c of misCitas">
+            <div class="portal-item-top">
+              <strong>{{ c.clinicaNombre || 'Clínica' }}</strong>
+              <span class="status-pill" [ngClass]="{
+                'st-pendiente': c.estado === 'Pendiente',
+                'st-agendada': c.estado === 'Agendada',
+                'st-completada': c.estado === 'Completada',
+                'st-cancelada': c.estado === 'Cancelada'
+              }">{{ c.estado }}</span>
+            </div>
+            <p class="portal-meta">🕒 {{ c.fechaHora | date:'medium' }} · 👨‍⚕️ {{ c.nombreDoctor }}</p>
+            <p class="portal-desc">{{ c.motivoConsulta }}</p>
+            <small class="portal-sub" *ngIf="c.folio">Folio: {{ c.folio }}</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: MI HISTORIAL MÉDICO (PACIENTE) ================= -->
+  <div class="modal-overlay" *ngIf="mostrarModalMiHistorial">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>📋 Mi Historial Clínico y Recetas</h2>
+        <button class="close-btn" (click)="mostrarModalMiHistorial = false">✖</button>
+      </div>
+      <div class="modal-body">
+        <p *ngIf="cargandoMiHistorial" class="empty-msg">Cargando tu historial...</p>
+        <p *ngIf="!cargandoMiHistorial && !miHistorial.length" class="empty-msg">Aún no tienes consultas completadas en tu historial.</p>
+
+        <div class="portal-list" *ngIf="!cargandoMiHistorial && miHistorial.length">
+          <div class="portal-item" *ngFor="let h of miHistorial">
+            <div class="portal-item-top">
+              <strong>{{ h.diagnostico }} <span *ngIf="h.codigoCIE10">({{ h.codigoCIE10 }})</span></strong>
+              <small>{{ h.fechaRegistro | date:'shortDate' }}</small>
+            </div>
+            <p class="portal-meta">🏥 {{ h.clinicaNombre }} · 👨‍⚕️ {{ h.nombreDoctor }}</p>
+            <p class="portal-desc"><strong>Plan:</strong> {{ h.planTerapeutico }}</p>
+            <div class="receta-box" *ngIf="h.recetaMedicamentos">
+              <strong>💊 Receta:</strong>
+              <pre>{{ h.recetaMedicamentos }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: EDITAR PERFIL DE CLÍNICA (ADMIN) ================= -->
   <div class="modal-overlay" *ngIf="mostrarModalClinica">
     <div class="modal-content">
       <div class="modal-header">
@@ -124,7 +291,7 @@
     </div>
   </div>
 
-  <!-- MODAL: AGREGAR / EDITAR ESPECIALIDAD -->
+  <!-- ================= MODAL: AGREGAR / EDITAR ESPECIALIDAD (ADMIN) ================= -->
   <div class="modal-overlay" *ngIf="mostrarModalEspecialidad">
     <div class="modal-content">
       <div class="modal-header">

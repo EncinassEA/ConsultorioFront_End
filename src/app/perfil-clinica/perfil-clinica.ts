@@ -17,6 +17,9 @@ export class PerfilClinica implements OnInit {
 
   clinicaId: number = 1;
   esAdmin: boolean = false;
+  esStaff: boolean = false;
+  esPaciente: boolean = false;
+  nombreUsuario: string = '';
   vistaPreviaPaciente: boolean = false;
 
   clinica: any = {
@@ -26,12 +29,14 @@ export class PerfilClinica implements OnInit {
     direccion: 'Av. Miguel Alemán 153 Sur, Cd. Obregón',
     telefono: '644 415 3044',
     descripcion: 'Clínica médica general y especialidades.',
+    plan: 'Basico',
     limiteEspecialidades: 3
   };
 
   especialidades: any[] = [];
+  doctores: any[] = [];
 
-  // Modales de edición (solo Admin)
+  // Modales de Admin
   mostrarModalClinica: boolean = false;
   clinicaForm: any = {};
 
@@ -46,6 +51,41 @@ export class PerfilClinica implements OnInit {
 
   iconosSugeridos: string[] = ['🦷', '🩺', '👶', '❤️', '👁️', '🦴', '🧠', '🧪', '💊'];
 
+  // Modal de Agendar Cita (Paciente)
+  mostrarModalCita: boolean = false;
+  enviandoCita: boolean = false;
+  especialidadSeleccionada: any = null;
+  citaForm: any = {
+    doctorId: 0,
+    fecha: this.obtenerFechaHoyISO(),
+    hora: '10:00',
+    motivoConsulta: '',
+    notasPaciente: ''
+  };
+
+  // Modales de Portal del Paciente (Perfil, Mis Citas, Mi Historial)
+  mostrarModalMiPerfil: boolean = false;
+  guardandoPerfil: boolean = false;
+  miPerfilForm: any = {
+    nombre: '',
+    apellidos: '',
+    curp: '',
+    sexo: 'Masculino',
+    fechaNacimiento: '',
+    telefono: '',
+    direccion: '',
+    contactoEmergencia: '',
+    alergias: 'Ninguna'
+  };
+
+  mostrarModalMisCitas: boolean = false;
+  misCitas: any[] = [];
+  cargandoMisCitas: boolean = false;
+
+  mostrarModalMiHistorial: boolean = false;
+  miHistorial: any[] = [];
+  cargandoMiHistorial: boolean = false;
+
   constructor(
     private http: HttpClient,
     private route: ActivatedRoute,
@@ -57,11 +97,79 @@ export class PerfilClinica implements OnInit {
   }
 
   ngOnInit() {
-    const idParam = Number(this.route.snapshot.paramMap.get('id'));
-    if (idParam > 0) this.clinicaId = idParam;
+    this.route.paramMap.subscribe(params => {
+      const idParam = Number(params.get('id'));
+      const clinicaGuardada = Number(localStorage.getItem('clinica_id') || '1');
+      this.clinicaId = idParam > 0 ? idParam : (clinicaGuardada > 0 ? clinicaGuardada : 1);
 
-    this.esAdmin = !!localStorage.getItem('token_medical_staff');
-    this.cargarPerfil();
+      this.detectarSesion();
+      this.cargarPerfil();
+    });
+  }
+
+  private obtenerFechaHoyISO(): string {
+    const hoy = new Date();
+    const y = hoy.getFullYear();
+    const m = String(hoy.getMonth() + 1).padStart(2, '0');
+    const d = String(hoy.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  private decodificarJwt(token: string): any {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonPayload);
+    } catch {
+      return {};
+    }
+  }
+
+  private detectarSesion() {
+    const token = localStorage.getItem('token_medical_staff');
+    if (!token) {
+      this.esAdmin = false;
+      this.esStaff = false;
+      this.esPaciente = false;
+      this.nombreUsuario = '';
+      return;
+    }
+
+    const payload = this.decodificarJwt(token);
+    const rol = (
+      payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+      payload['role'] ||
+      localStorage.getItem('rol_usuario') ||
+      ''
+    ).toString();
+    const clinicaToken = Number(payload['ClinicaId'] || localStorage.getItem('clinica_id') || '0');
+
+    this.nombreUsuario =
+      payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ||
+      payload['name'] ||
+      localStorage.getItem('nombre_usuario') ||
+      localStorage.getItem('correo_usuario') ||
+      'Usuario';
+
+    this.esPaciente = rol.toLowerCase() === 'paciente';
+    this.esStaff = !!rol && !this.esPaciente;
+    this.esAdmin = this.esStaff && (clinicaToken === this.clinicaId || clinicaToken === 0);
+  }
+
+  private extraerError(err: any, defecto: string): string {
+    if (typeof err?.error === 'string' && err.error.trim().length > 0) {
+      return err.error.replace(/^"|"$/g, '');
+    }
+    if (err?.error?.errors) {
+      return Object.values(err.error.errors).flat().join(' | ');
+    }
+    return err?.error?.title || defecto;
   }
 
   cargarPerfil() {
@@ -69,6 +177,7 @@ export class PerfilClinica implements OnInit {
       next: (res) => {
         if (res?.clinica) this.clinica = res.clinica;
         if (Array.isArray(res?.especialidades)) this.especialidades = res.especialidades;
+        if (Array.isArray(res?.doctores)) this.doctores = res.doctores;
       },
       error: () => {
         Swal.fire('Error', 'No se pudo cargar la información de la clínica.', 'error');
@@ -81,7 +190,7 @@ export class PerfilClinica implements OnInit {
     return valor.startsWith('http://') || valor.startsWith('https://') || valor.startsWith('data:image/');
   }
 
-  // --- EDICIÓN DE CLÍNICA (ADMIN) ---
+  // ================= EDICIÓN DE CLÍNICA (ADMIN) =================
   abrirModalEditarClinica() {
     this.clinicaForm = { ...this.clinica };
     this.mostrarModalClinica = true;
@@ -100,12 +209,12 @@ export class PerfilClinica implements OnInit {
         Swal.fire({ title: 'Perfil actualizado', icon: 'success', timer: 1400, showConfirmButton: false });
       },
       error: (err) => {
-        Swal.fire('Error', err?.error || 'No se pudo actualizar la clínica.', 'error');
+        Swal.fire('Error', this.extraerError(err, 'No se pudo actualizar la clínica.'), 'error');
       }
     });
   }
 
-  // --- CRUD ESPECIALIDADES (ADMIN) ---
+  // ================= CRUD ESPECIALIDADES (ADMIN) =================
   abrirModalNuevaEspecialidad() {
     this.especialidadForm = {
       id: 0,
@@ -145,7 +254,7 @@ export class PerfilClinica implements OnInit {
         this.cargarPerfil();
       },
       error: (err) => {
-        Swal.fire('Aviso', typeof err?.error === 'string' ? err.error : 'No se pudo guardar la especialidad.', 'warning');
+        Swal.fire('Aviso', this.extraerError(err, 'No se pudo guardar la especialidad.'), 'warning');
       }
     });
   }
@@ -160,27 +269,187 @@ export class PerfilClinica implements OnInit {
     }).then(r => {
       if (r.isConfirmed) {
         this.http.delete(`${this.apiBase}/Especialidades/${esp.id}`).subscribe({
-          next: () => {
-            this.cargarPerfil();
-          },
-          error: () => Swal.fire('Error', 'No se pudo eliminar la especialidad.', 'error')
+          next: () => this.cargarPerfil(),
+          error: (err) => Swal.fire('Error', this.extraerError(err, 'No se pudo eliminar la especialidad.'), 'error')
         });
       }
     });
   }
 
-  // --- ACCIÓN DE CITA (PACIENTE) ---
+  // ================= AGENDAR CITA REAL (PACIENTE) =================
   solicitarCita(esp: any) {
     if (esp.estado !== 'Activa') return;
-    Swal.fire({
-      title: `Agendar en ${esp.nombre}`,
-      text: `Clínica: ${this.clinica.nombre}. Aquí conectaremos el formulario público de citas.`,
-      icon: 'info',
-      confirmButtonText: 'Entendido'
+
+    if (!this.esPaciente && !this.vistaPreviaPaciente) {
+      Swal.fire({
+        title: 'Inicia sesión como Paciente',
+        text: 'Para agendar tu cita con tus datos precargados, inicia sesión o crea tu cuenta de paciente.',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: 'Ir a Iniciar Sesión',
+        cancelButtonText: 'Cancelar'
+      }).then(res => {
+        if (res.isConfirmed) {
+          this.router.navigate(['/']);
+        }
+      });
+      return;
+    }
+
+    this.especialidadSeleccionada = esp;
+    this.citaForm = {
+      doctorId: this.doctores.length > 0 ? this.doctores[0].id : 0,
+      fecha: this.obtenerFechaHoyISO(),
+      hora: '10:00',
+      motivoConsulta: '',
+      notasPaciente: ''
+    };
+    this.mostrarModalCita = true;
+  }
+
+  confirmarSolicitudCita() {
+    if (this.vistaPreviaPaciente && !this.esPaciente) {
+      Swal.fire('Vista previa', 'Estás en modo vista previa de administrador. Inicia sesión con una cuenta de Paciente para enviar citas reales.', 'info');
+      return;
+    }
+
+    if (!this.citaForm.doctorId || !this.citaForm.fecha || !this.citaForm.hora || !this.citaForm.motivoConsulta?.trim()) {
+      Swal.fire('Campos incompletos', 'Selecciona médico, fecha, hora y describe tu motivo de consulta.', 'warning');
+      return;
+    }
+
+    this.enviandoCita = true;
+    const fechaHoraISO = new Date(`${this.citaForm.fecha}T${this.citaForm.hora}:00`).toISOString();
+    const prefijoEsp = this.especialidadSeleccionada?.nombre ? `[${this.especialidadSeleccionada.nombre}] ` : '';
+
+    const payload = {
+      clinicaId: Number(this.clinica.id || this.clinicaId),
+      doctorId: Number(this.citaForm.doctorId),
+      fechaHora: fechaHoraISO,
+      motivoConsulta: `${prefijoEsp}${this.citaForm.motivoConsulta.trim()}`,
+      notasPaciente: this.citaForm.notasPaciente?.trim() || null
+    };
+
+    this.http.post<any>(`${this.apiBase}/Citas/solicitar`, payload).subscribe({
+      next: (res) => {
+        this.enviandoCita = false;
+        this.mostrarModalCita = false;
+        Swal.fire({
+          title: '¡Cita solicitada!',
+          text: res?.mensaje || 'Tu solicitud quedó en estado Pendiente hasta que la clínica la confirme.',
+          icon: 'success'
+        });
+      },
+      error: (err) => {
+        this.enviandoCita = false;
+        Swal.fire('No se pudo agendar', this.extraerError(err, 'Ocurrió un error al solicitar tu cita.'), 'error');
+      }
     });
   }
 
+  // ================= PORTAL DEL PACIENTE (PERFIL / CITAS / HISTORIAL) =================
+  abrirMiPerfil() {
+    this.mostrarModalMiPerfil = true;
+    this.http.get<any>(`${this.apiBase}/Pacientes/mi-perfil`).subscribe({
+      next: (p) => {
+        this.miPerfilForm = {
+          nombre: p.nombre || '',
+          apellidos: p.apellidos || '',
+          curp: p.curp || '',
+          sexo: p.sexo || 'Masculino',
+          fechaNacimiento: p.fechaNacimiento ? String(p.fechaNacimiento).substring(0, 10) : '',
+          telefono: p.telefono || '',
+          direccion: p.direccion || '',
+          contactoEmergencia: p.contactoEmergencia || '',
+          alergias: p.alergias || 'Ninguna'
+        };
+      },
+      error: (err) => {
+        this.mostrarModalMiPerfil = false;
+        Swal.fire('Error', this.extraerError(err, 'No se pudo cargar tu perfil.'), 'error');
+      }
+    });
+  }
+
+  guardarMiPerfil() {
+    if (!this.miPerfilForm.nombre?.trim() || !this.miPerfilForm.apellidos?.trim()) {
+      Swal.fire('Campos requeridos', 'Nombre y apellidos son obligatorios.', 'warning');
+      return;
+    }
+
+    this.guardandoPerfil = true;
+    const payload = {
+      nombre: this.miPerfilForm.nombre.trim(),
+      apellidos: this.miPerfilForm.apellidos.trim(),
+      sexo: this.miPerfilForm.sexo,
+      fechaNacimiento: this.miPerfilForm.fechaNacimiento ? `${this.miPerfilForm.fechaNacimiento}T12:00:00.000Z` : null,
+      telefono: this.miPerfilForm.telefono?.trim() || null,
+      direccion: this.miPerfilForm.direccion?.trim() || null,
+      contactoEmergencia: this.miPerfilForm.contactoEmergencia?.trim() || null
+    };
+
+    this.http.put<any>(`${this.apiBase}/Pacientes/mi-perfil`, payload).subscribe({
+      next: () => {
+        this.guardandoPerfil = false;
+        this.mostrarModalMiPerfil = false;
+        this.nombreUsuario = `${payload.nombre} ${payload.apellidos}`.trim();
+        localStorage.setItem('nombre_usuario', this.nombreUsuario);
+        Swal.fire({ title: 'Perfil actualizado', icon: 'success', timer: 1400, showConfirmButton: false });
+      },
+      error: (err) => {
+        this.guardandoPerfil = false;
+        Swal.fire('Error', this.extraerError(err, 'No se pudo actualizar tu perfil.'), 'error');
+      }
+    });
+  }
+
+  abrirMisCitas() {
+    this.mostrarModalMisCitas = true;
+    this.cargandoMisCitas = true;
+    this.http.get<any[]>(`${this.apiBase}/Citas/mis-citas`).subscribe({
+      next: (lista) => {
+        this.cargandoMisCitas = false;
+        this.misCitas = Array.isArray(lista) ? lista : [];
+      },
+      error: (err) => {
+        this.cargandoMisCitas = false;
+        Swal.fire('Error', this.extraerError(err, 'No se pudieron cargar tus citas.'), 'error');
+      }
+    });
+  }
+
+  abrirMiHistorial() {
+    this.mostrarModalMiHistorial = true;
+    this.cargandoMiHistorial = true;
+    this.http.get<any[]>(`${this.apiBase}/NotasMedicas/mi-historial`).subscribe({
+      next: (lista) => {
+        this.cargandoMiHistorial = false;
+        this.miHistorial = Array.isArray(lista) ? lista : [];
+      },
+      error: (err) => {
+        this.cargandoMiHistorial = false;
+        Swal.fire('Error', this.extraerError(err, 'No se pudo cargar tu historial médico.'), 'error');
+      }
+    });
+  }
+
+  // ================= NAVEGACIÓN =================
   volverAlDashboard() {
     this.router.navigate(['/dashboard']);
+  }
+
+  volverAlInicio() {
+    this.router.navigate(['/']);
+  }
+
+  cerrarSesion() {
+    localStorage.removeItem('token_medical_staff');
+    localStorage.removeItem('correo_usuario');
+    localStorage.removeItem('rol_usuario');
+    localStorage.removeItem('nombre_usuario');
+    localStorage.removeItem('clinica_id');
+    localStorage.removeItem('paciente_id');
+    this.detectarSesion();
+    this.router.navigate(['/']);
   }
 }

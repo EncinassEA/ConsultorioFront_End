@@ -1,5 +1,5 @@
 <div class="landing-page-light">
-  
+
   <!-- ================= NAVBAR (Azul Oscuro Premium) ================= -->
   <nav class="navbar-dark">
     <div class="brand">
@@ -17,16 +17,34 @@
       </svg>
       <strong>Medical Staff</strong>
     </div>
-    
+
+    <!-- SOLO CLÍNICAS, PLANES Y UBICACIONES -->
     <ul class="nav-links hidden-mobile">
-      <li><a href="#especialidades">Especialidades</a></li>
       <li><a href="#clinicas">Clínicas</a></li>
+      <li><a href="#planes">Planes</a></li>
       <li><a href="#mapa">Ubicaciones</a></li>
     </ul>
-    
-    <div class="nav-actions">
-      <button class="btn-text" (click)="mostrarModalLogin = true">Iniciar Sesión</button>
-      <button class="btn-primary" (click)="mostrarModalLogin = true">Acceso Médicos</button>
+
+    <!-- SIN SESIÓN -->
+    <div class="nav-actions" *ngIf="!usuarioLogueado">
+      <button class="btn-text" (click)="abrirModalLogin('login')">Iniciar Sesión</button>
+      <button class="btn-primary" (click)="abrirModalLogin('registro')">Crear Cuenta</button>
+    </div>
+
+    <!-- SESIÓN DE PACIENTE: ACCESOS DIRECTOS A CITAS, HISTORIAL Y PERFIL -->
+    <div class="nav-actions patient-nav" *ngIf="usuarioLogueado && esPaciente">
+      <button class="btn-nav-chip" (click)="abrirPortalPaciente('citas')">📅 Mis Citas</button>
+      <button class="btn-nav-chip" (click)="abrirPortalPaciente('historial')">📋 Mi Historial</button>
+      <button class="btn-primary btn-profile-pill" (click)="abrirPortalPaciente('perfil')" title="Ver y editar mi perfil">
+        👤 {{ usuarioLogueado.nombre }}
+      </button>
+      <button class="btn-text" (click)="cerrarSesionInicio()">Salir</button>
+    </div>
+
+    <!-- SESIÓN DE STAFF / ADMIN -->
+    <div class="nav-actions" *ngIf="usuarioLogueado && !esPaciente">
+      <button class="btn-primary" (click)="irADashboard()">📊 Ir al Dashboard</button>
+      <button class="btn-text" (click)="cerrarSesionInicio()">Salir</button>
     </div>
   </nav>
 
@@ -34,92 +52,174 @@
   <header class="hero-section">
     <div class="hero-content">
       <div class="badge-location">
-        <span class="dot"></span> Directorio Médico | Sonora
+        <span class="dot"></span> Directorio Médico | Ciudad Obregón, Sonora
       </div>
-      
+
       <h1>Encuentra tu salud en los mejores<br><span class="highlight hover-color">Consultorios y Especialistas</span></h1>
       <p class="subtitle">Agenda tu cita al instante con los mejores médicos de tu ciudad. Sin filas, sin llamadas largas, 100% digital.</p>
-      
+
       <div class="search-box-advanced">
+        <!-- BÚSQUEDA POR CLÍNICA / SERVICIO -->
         <div class="input-group flex-2">
           <span class="icon">🔍</span>
-          <input type="text" placeholder="Nombre del consultorio o doctor...">
+          <input
+            type="text"
+            [(ngModel)]="terminoBusqueda"
+            (input)="aplicarFiltrosClinicas(false)"
+            (keyup.enter)="buscarClinica()"
+            placeholder="Nombre de clínica, doctor o servicio...">
         </div>
-        
+
         <div class="divider"></div>
-        
-        <div class="input-group flex-1">
-          <span class="icon">🩺</span>
-          <select class="clean-select">
-            <option value="" disabled selected>Especialidad...</option>
-            <option value="todas">Todas las especialidades</option>
-            <option *ngFor="let esp of listaEspecialidades" [value]="esp">{{ esp }}</option>
-          </select>
+
+        <!-- SELECTOR INNOVADOR DE ESPECIALIDADES -->
+        <div class="input-group flex-1 specialty-picker-group">
+          <button type="button" class="specialty-trigger" (click)="toggleSelectorEspecialidades($event)">
+            <span class="icon">{{ iconoEspecialidadSeleccionada }}</span>
+            <span class="trigger-text" [class.placeholder]="!especialidadSeleccionada">
+              {{ especialidadSeleccionada || 'Especialidad...' }}
+            </span>
+            <span class="chevron" [class.open]="mostrarSelectorEspecialidades">▾</span>
+          </button>
+
+          <div class="specialty-popover" *ngIf="mostrarSelectorEspecialidades" (click)="$event.stopPropagation()">
+            <div class="popover-search">
+              <input
+                type="text"
+                [(ngModel)]="filtroDropdownEspecialidad"
+                placeholder="Filtrar especialidad...">
+            </div>
+
+            <div class="popover-grid">
+              <button
+                type="button"
+                class="spec-option"
+                [class.active]="!especialidadSeleccionada"
+                (click)="seleccionarEspecialidad(null)">
+                <span class="spec-ic">✨</span>
+                <span class="spec-name">Todas</span>
+              </button>
+
+              <button
+                type="button"
+                class="spec-option"
+                *ngFor="let esp of especialidadesFiltradasDropdown"
+                [class.active]="especialidadSeleccionada.toLowerCase() === esp.nombre.toLowerCase()"
+                (click)="seleccionarEspecialidad(esp)">
+                <span class="spec-ic">{{ esp.icono }}</span>
+                <span class="spec-name">{{ esp.nombre }}</span>
+                <span class="spec-count">{{ esp.totalClinicas }}</span>
+              </button>
+            </div>
+
+            <p class="popover-empty" *ngIf="!especialidadesFiltradasDropdown.length">
+              Sin coincidencias para "{{ filtroDropdownEspecialidad }}"
+            </p>
+          </div>
         </div>
-        
+
         <div class="divider"></div>
-        
-        <div class="input-group flex-1 hidden-mobile">
+
+        <!-- CIUDAD FIJA (CIUDAD OBREGÓN, SIN PODER MOVER) -->
+        <div class="input-group flex-1 city-locked hidden-mobile" title="Disponible actualmente en Ciudad Obregón, Sonora">
           <span class="icon">📍</span>
-          <input type="text" placeholder="Ciudad Obregón" value="Ciudad Obregón">
+          <span class="city-value">{{ ciudadFija }}</span>
+          <span class="city-lock">🔒</span>
         </div>
-        
+
         <button class="btn-search" (click)="buscarClinica()">Buscar</button>
       </div>
 
-      <div class="quick-filters hidden-mobile" id="especialidades">
-        <span class="filter-label">Más buscados:</span>
-        <button class="pill-btn">Odontología</button>
-        <button class="pill-btn">Ginecología</button>
-        <button class="pill-btn">Pediatría</button>
+      <!-- FILTROS RÁPIDOS DINÁMICOS CON ESPECIALIDADES REALES -->
+      <div class="quick-filters" *ngIf="especialidadesDisponibles.length">
+        <span class="filter-label">Especialidades disponibles:</span>
+        <button
+          class="pill-btn"
+          *ngFor="let esp of especialidadesDisponibles | slice:0:6"
+          [class.active]="especialidadSeleccionada.toLowerCase() === esp.nombre.toLowerCase()"
+          (click)="aplicarFiltroRapido(esp)">
+          {{ esp.icono }} {{ esp.nombre }}
+        </button>
+        <button class="pill-btn pill-clear" *ngIf="terminoBusqueda || especialidadSeleccionada" (click)="limpiarFiltros()">
+          ✖ Limpiar
+        </button>
       </div>
     </div>
   </header>
 
-  <!-- ================= CINTA DE ESTADÍSTICAS ================= -->
+  <!-- ================= CINTA DE ESTADÍSTICAS (COMPACTA Y CON DATOS REALES) ================= -->
   <div class="stats-ribbon">
     <div class="container stats-flex">
-      <div class="stat-item"><h3>+1,200</h3><p>Pacientes Atendidos</p></div>
-      <div class="stat-item"><h3>50+</h3><p>Clínicas Activas</p></div>
-      <div class="stat-item"><h3>4.9/5</h3><p>Calificación Promedio</p></div>
+      <div class="stat-item">
+        <h3>{{ statsReales.totalPacientes }}</h3>
+        <p>Pacientes Registrados</p>
+      </div>
+      <div class="stat-item">
+        <h3>{{ statsReales.totalClinicas }}</h3>
+        <p>Clínicas Activas</p>
+      </div>
+      <div class="stat-item">
+        <h3>{{ statsReales.totalEspecialistas }}</h3>
+        <p>Especialistas</p>
+      </div>
+      <div class="stat-item">
+        <h3>{{ statsReales.totalConsultas }}</h3>
+        <p>Consultas Realizadas</p>
+      </div>
     </div>
   </div>
 
   <!-- ================= SECCIÓN DIRECTORIO DE CLÍNICAS ================= -->
   <section id="clinicas" class="section-clinics container">
-    <div class="section-header text-center" style="margin-bottom: 3rem;">
+    <div class="section-header text-center" style="margin-bottom: 2.5rem;">
       <h2>Clínicas Registradas</h2>
-      <p>Explora nuestro directorio completo y agenda tu cita hoy mismo.</p>
+      <p>Explora nuestro directorio en Ciudad Obregón, conoce sus especialidades reales y agenda tu cita.</p>
     </div>
 
     <div class="clinics-grid">
-      <div class="clinic-card" *ngFor="let clinica of consultorios">
+      <div class="clinic-card" *ngFor="let clinica of consultoriosFiltrados">
         <div class="card-top {{ clinica.theme }}">
-          <div class="clinic-icon">{{ clinica.icono }}</div>
+          <div class="clinic-icon">
+            <img *ngIf="esUrlImagen(clinica.icono)" [src]="clinica.icono" [alt]="clinica.nombre">
+            <span *ngIf="!esUrlImagen(clinica.icono)">{{ clinica.icono }}</span>
+          </div>
           <div class="status-badge" [ngClass]="{'bg-green': clinica.estado === 'Abierto', 'bg-red': clinica.estado === 'Cerrado'}">
             {{ clinica.estado }}
           </div>
         </div>
-        
+
         <div class="card-bottom">
-          <h3 class="hover-blue">{{ clinica.nombre }}</h3>
+          <h3 class="hover-blue" (click)="verPerfilClinica(clinica)">{{ clinica.nombre }}</h3>
           <p class="address hover-blue">📍 {{ clinica.direccion }}</p>
-          
-          <div class="tags">
-            <span class="tag hover-border" *ngFor="let tag of clinica.especialidades">{{ tag }}</span>
+          <p class="clinic-desc" *ngIf="clinica.descripcion">{{ clinica.descripcion }}</p>
+
+          <!-- ESPECIALIDADES REALES DE LA CLÍNICA -->
+          <div class="tags" *ngIf="clinica.especialidades?.length">
+            <span
+              class="tag hover-border"
+              *ngFor="let esp of clinica.especialidades"
+              [class.tag-soon]="esp.estado !== 'Activa'"
+              (click)="aplicarFiltroRapido(esp)">
+              {{ esp.icono }} {{ esp.nombre }}
+            </span>
           </div>
-          
+
           <div class="stats">
-            <span class="hover-blue">👨‍⚕️ {{ clinica.especialistas }} Especialistas</span>
-            <span>⭐ <strong>{{ clinica.calificacion }}</strong> ({{ clinica.resenas }})</span>
+            <span class="hover-blue">👨‍⚕️ {{ clinica.totalEspecialistas }} Especialista(s)</span>
+            <span>📞 {{ clinica.telefono || 'Agenda 24/7' }}</span>
           </div>
-          
+
           <div class="card-actions">
-            <button class="btn-outline w-100">Especialistas</button>
-            <button class="btn-solid w-100" [disabled]="clinica.estado === 'Cerrado'">Agendar Cita</button>
+            <button class="btn-outline w-100" (click)="verPerfilClinica(clinica)">Ver Perfil</button>
+            <button class="btn-solid w-100" [disabled]="clinica.estado === 'Cerrado'" (click)="verPerfilClinica(clinica)">Agendar Cita</button>
           </div>
         </div>
       </div>
+    </div>
+
+    <div *ngIf="!consultoriosFiltrados.length" class="text-center" style="padding: 2rem 0; color: #64748b;">
+      <p>No encontramos clínicas que coincidan con tu búsqueda.</p>
+      <button class="btn-outline" (click)="limpiarFiltros()">Mostrar todas las clínicas</button>
     </div>
   </section>
 
@@ -128,7 +228,7 @@
     <div class="map-wrapper">
       <div class="map-overlay">
         <h3>📍 Encuentra clínicas cerca de ti</h3>
-        <p>Espacio reservado para la integración oficial con Google Maps API. Los pacientes podrán buscar consultorios mediante geolocalización.</p>
+        <p>Espacio reservado para la integración oficial con Google Maps API. Los pacientes podrán buscar consultorios en Ciudad Obregón mediante geolocalización.</p>
         <button class="btn-primary" style="margin-top: 1rem; box-shadow: 0 4px 15px rgba(37,99,235,0.4);">Activar Mapa (Próximamente)</button>
       </div>
     </div>
@@ -141,7 +241,7 @@
         <h2>¿Por qué usar Medical Staff?</h2>
         <p>Tu salud merece la mejor tecnología.</p>
       </div>
-      
+
       <div class="benefits-grid">
         <div class="benefit-item" *ngFor="let ben of beneficiosPacientes">
           <div class="benefit-icon hover-bounce">{{ ben.icono }}</div>
@@ -152,14 +252,15 @@
     </div>
   </section>
 
-  <!-- ================= CTA PARA DOCTORES (SaaS) ================= -->
-  <section class="section-cta container">
+  <!-- ================= CTA + PLANES PARA DOCTORES (SaaS) ================= -->
+  <section id="planes" class="section-cta container">
     <div class="cta-box-light hover-glow">
       <div class="cta-content">
         <h2>¿Eres dueño de un consultorio?</h2>
-        <p>Usa el software líder en gestión clínica. Digitaliza expedientes, controla tu inventario de medicamentos y agenda pacientes automáticamente.</p>
-        <div class="cta-actions">
-          <button class="btn-primary btn-large" (click)="mostrarModalLogin = true">Descubre el Software (SaaS)</button>
+        <p>Usa el software líder en gestión clínica. Digitaliza expedientes NOM-004, controla tu inventario de medicamentos y recibe citas en línea.</p>
+        <div class="cta-actions" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <button class="btn-primary btn-large" (click)="abrirRegistroClinica('Basico')">Registrar mi Clínica</button>
+          <button class="btn-outline" (click)="abrirModalLogin('login')">Ya tengo cuenta</button>
         </div>
       </div>
       <div class="cta-image hidden-mobile">
@@ -171,6 +272,34 @@
             <div class="mockup-line w-50"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- TARJETAS DE PLANES SAAS -->
+    <div class="plans-header text-center">
+      <h2>Elige el plan ideal para tu clínica</h2>
+      <p>Crea tu clínica en segundos, completamente aislada y lista para operar desde hoy.</p>
+    </div>
+
+    <div class="plans-grid">
+      <div class="plan-card" *ngFor="let plan of planesSaaS" [class.featured]="plan.destacado">
+        <span class="plan-pill" [class.featured-pill]="plan.destacado">{{ plan.badge }}</span>
+        <h3>{{ plan.nombre }}</h3>
+        <div class="plan-price">
+          <strong>{{ plan.precio }}</strong>
+          <span>MXN {{ plan.periodo }}</span>
+        </div>
+        <p class="plan-limit">{{ plan.limite }}</p>
+
+        <ul class="plan-features">
+          <li *ngFor="let item of plan.beneficios">✓ {{ item }}</li>
+        </ul>
+
+        <button
+          [ngClass]="plan.destacado ? 'btn-primary w-100' : 'btn-outline w-100'"
+          (click)="abrirRegistroClinica(plan.id)">
+          Empezar con {{ plan.nombre }}
+        </button>
       </div>
     </div>
   </section>
@@ -192,12 +321,12 @@
         <div class="link-column">
           <h4>Plataforma</h4>
           <a href="#clinicas">Buscar Clínicas</a>
-          <a href="#" (click)="mostrarModalLogin = true">Registrar mi Consultorio</a>
+          <a href="#planes" (click)="irAPlanes(); $event.preventDefault()">Registrar mi Consultorio</a>
         </div>
         <div class="link-column">
-          <h4>Soporte</h4>
-          <a href="#">Ayuda para pacientes</a>
-          <a href="#">Ayuda para clínicas</a>
+          <h4>Acceso</h4>
+          <a href="#" (click)="abrirModalLogin('login'); $event.preventDefault()">Iniciar Sesión</a>
+          <a href="#" (click)="abrirModalLogin('registro'); $event.preventDefault()">Crear Cuenta Paciente</a>
         </div>
       </div>
     </div>
@@ -206,24 +335,324 @@
     </div>
   </footer>
 
-  <!-- ================= MODAL DE LOGIN JWT ================= -->
-  <div *ngIf="mostrarModalLogin" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
-    <div style="background: white; width: 100%; max-width: 400px; border-radius: 1rem; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: #0f172a; color: white;">
-        <h3 style="margin: 0; font-size: 1.2rem;">🔒 Acceso a Medical Staff</h3>
-        <button (click)="mostrarModalLogin = false" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">✖</button>
+  <!-- ================= MODAL PORTAL DEL PACIENTE (CITAS / HISTORIAL / PERFIL) ================= -->
+  <div class="auth-modal-overlay" *ngIf="mostrarPortalPaciente">
+    <div class="auth-modal-box modal-portal">
+      <div class="auth-modal-header">
+        <h3>👤 Mi Portal — {{ usuarioLogueado?.nombre }}</h3>
+        <button (click)="mostrarPortalPaciente = false" class="modal-close-btn">✖</button>
       </div>
-      <div style="padding: 1.5rem;">
-        <div style="margin-bottom: 1rem;">
-          <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 0.4rem;">Correo Electrónico</label>
-          <input type="email" [(ngModel)]="credenciales.correo" placeholder="ana.recepcion@clinica.com" style="width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-sizing: border-box;">
+
+      <div class="auth-tabs tabs-3">
+        <button [class.active]="tabPortalPaciente === 'citas'" (click)="cambiarTabPortal('citas')">📅 Mis Citas</button>
+        <button [class.active]="tabPortalPaciente === 'historial'" (click)="cambiarTabPortal('historial')">📋 Historial</button>
+        <button [class.active]="tabPortalPaciente === 'perfil'" (click)="cambiarTabPortal('perfil')">👤 Mi Perfil</button>
+      </div>
+
+      <div class="auth-modal-body">
+        <p *ngIf="cargandoPortal" class="portal-empty">Cargando información...</p>
+
+        <!-- TAB 1: MIS CITAS -->
+        <div *ngIf="!cargandoPortal && tabPortalPaciente === 'citas'">
+          <p *ngIf="!misCitas.length" class="portal-empty">
+            Aún no tienes citas registradas. Elige una clínica del directorio para agendar tu primera consulta.
+          </p>
+
+          <div *ngIf="citasActivasPaciente.length" class="portal-group">
+            <h4 class="portal-group-title">Citas Activas ({{ citasActivasPaciente.length }})</h4>
+            <div class="portal-card" *ngFor="let c of citasActivasPaciente">
+              <div class="portal-card-top">
+                <strong>🏥 {{ c.clinicaNombre || 'Clínica' }}</strong>
+                <span class="portal-status" [ngClass]="c.estado === 'Pendiente' ? 'st-pendiente' : 'st-agendada'">
+                  {{ c.estado }}
+                </span>
+              </div>
+              <p class="portal-meta">🕒 {{ c.fechaHora | date:'medium' }} · 👨‍⚕️ {{ c.nombreDoctor }}</p>
+              <p class="portal-desc">{{ c.motivoConsulta }}</p>
+              <small class="portal-folio" *ngIf="c.folio">Folio: {{ c.folio }}</small>
+            </div>
+          </div>
+
+          <div *ngIf="citasPasadasPaciente.length" class="portal-group">
+            <h4 class="portal-group-title">Citas Anteriores ({{ citasPasadasPaciente.length }})</h4>
+            <div class="portal-card past" *ngFor="let c of citasPasadasPaciente">
+              <div class="portal-card-top">
+                <strong>🏥 {{ c.clinicaNombre || 'Clínica' }}</strong>
+                <span class="portal-status" [ngClass]="c.estado === 'Completada' ? 'st-completada' : 'st-cancelada'">
+                  {{ c.estado }}
+                </span>
+              </div>
+              <p class="portal-meta">🕒 {{ c.fechaHora | date:'medium' }} · 👨‍⚕️ {{ c.nombreDoctor }}</p>
+              <p class="portal-desc">{{ c.motivoConsulta }}</p>
+            </div>
+          </div>
         </div>
-        <div style="margin-bottom: 1.5rem;">
-          <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 0.4rem;">Contraseña</label>
-          <input type="password" [(ngModel)]="credenciales.password" (keyup.enter)="iniciarSesion()" placeholder="••••••••" style="width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-sizing: border-box;">
+
+        <!-- TAB 2: MI HISTORIAL CLÍNICO Y RECETAS -->
+        <div *ngIf="!cargandoPortal && tabPortalPaciente === 'historial'">
+          <p *ngIf="!miHistorial.length" class="portal-empty">
+            Todavía no tienes consultas completadas en tu historial médico.
+          </p>
+
+          <div class="portal-group" *ngIf="miHistorial.length">
+            <div class="portal-card" *ngFor="let h of miHistorial">
+              <div class="portal-card-top">
+                <strong>{{ h.diagnostico }} <span *ngIf="h.codigoCIE10">({{ h.codigoCIE10 }})</span></strong>
+                <small class="portal-date">{{ h.fechaRegistro | date:'shortDate' }}</small>
+              </div>
+              <p class="portal-meta">🏥 {{ h.clinicaNombre }} · 👨‍⚕️ {{ h.nombreDoctor }}</p>
+              <p class="portal-desc"><strong>Plan:</strong> {{ h.planTerapeutico }}</p>
+              <div class="receta-box" *ngIf="h.recetaMedicamentos">
+                <strong>💊 Receta:</strong>
+                <pre>{{ h.recetaMedicamentos }}</pre>
+              </div>
+            </div>
+          </div>
         </div>
-        <button class="btn-primary" style="width: 100%; padding: 0.9rem; border-radius: 0.5rem;" [disabled]="cargandoLogin" (click)="iniciarSesion()">
-          {{ cargandoLogin ? 'Verificando con BCrypt...' : 'Ingresar al Panel' }}
+
+        <!-- TAB 3: MI PERFIL (VER Y EDITAR DATOS) -->
+        <div *ngIf="!cargandoPortal && tabPortalPaciente === 'perfil'">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Nombre(s) *</label>
+              <input type="text" [(ngModel)]="miPerfilForm.nombre">
+            </div>
+            <div class="form-field">
+              <label>Apellidos *</label>
+              <input type="text" [(ngModel)]="miPerfilForm.apellidos">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>CURP (solo lectura)</label>
+              <input type="text" [value]="miPerfilForm.curp" readonly class="readonly-input">
+            </div>
+            <div class="form-field">
+              <label>Teléfono</label>
+              <input type="text" maxlength="10" [(ngModel)]="miPerfilForm.telefono" placeholder="6441234567">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Fecha de Nacimiento</label>
+              <input type="date" [(ngModel)]="miPerfilForm.fechaNacimiento">
+            </div>
+            <div class="form-field">
+              <label>Sexo</label>
+              <select [(ngModel)]="miPerfilForm.sexo">
+                <option value="Masculino">Masculino</option>
+                <option value="Femenino">Femenino</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Dirección</label>
+            <input type="text" [(ngModel)]="miPerfilForm.direccion" placeholder="Calle, número, colonia...">
+          </div>
+          <div class="form-field">
+            <label>Contacto de Emergencia</label>
+            <input type="text" [(ngModel)]="miPerfilForm.contactoEmergencia" placeholder="Nombre (Parentesco) - Teléfono">
+          </div>
+          <button class="btn-primary w-100" [disabled]="guardandoPerfil" (click)="guardarMiPerfil()">
+            {{ guardandoPerfil ? 'Guardando cambios...' : 'Guardar Datos de Mi Perfil' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL UNIFICADO: LOGIN / REGISTRO PACIENTE ================= -->
+  <div class="auth-modal-overlay" *ngIf="mostrarModalLogin">
+    <div class="auth-modal-box">
+      <div class="auth-modal-header">
+        <h3>🔒 Medical Staff</h3>
+        <button (click)="mostrarModalLogin = false" class="modal-close-btn">✖</button>
+      </div>
+
+      <div class="auth-tabs">
+        <button [class.active]="modoAuth === 'login'" (click)="modoAuth = 'login'">Iniciar Sesión</button>
+        <button [class.active]="modoAuth === 'registro'" (click)="modoAuth = 'registro'">Soy Paciente Nuevo</button>
+      </div>
+
+      <!-- TAB 1: INICIAR SESIÓN (UNIFICADO) -->
+      <div class="auth-modal-body" *ngIf="modoAuth === 'login'">
+        <p class="auth-hint">Entra con tu cuenta de <strong>Clínica / Médico</strong> o de <strong>Paciente</strong>.</p>
+        <div class="form-field">
+          <label>Correo Electrónico</label>
+          <input type="email" [(ngModel)]="credenciales.correo" placeholder="correo@ejemplo.com">
+        </div>
+        <div class="form-field">
+          <label>Contraseña</label>
+          <div class="password-wrapper">
+            <input
+              [type]="verPasswordLogin ? 'text' : 'password'"
+              [(ngModel)]="credenciales.password"
+              (keyup.enter)="iniciarSesion()"
+              placeholder="••••••••">
+            <button type="button" class="toggle-eye" (click)="verPasswordLogin = !verPasswordLogin" [title]="verPasswordLogin ? 'Ocultar' : 'Mostrar'">
+              <svg *ngIf="!verPasswordLogin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg *ngIf="verPasswordLogin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button class="btn-primary w-100" [disabled]="cargandoLogin" (click)="iniciarSesion()">
+          {{ cargandoLogin ? 'Verificando acceso...' : 'Ingresar' }}
+        </button>
+      </div>
+
+      <!-- TAB 2: REGISTRO DE PACIENTE -->
+      <div class="auth-modal-body" *ngIf="modoAuth === 'registro'">
+        <div class="form-row">
+          <div class="form-field">
+            <label>Nombre(s) *</label>
+            <input type="text" [(ngModel)]="registroPaciente.nombre" placeholder="Juan">
+          </div>
+          <div class="form-field">
+            <label>Apellidos *</label>
+            <input type="text" [(ngModel)]="registroPaciente.apellidos" placeholder="Pérez López">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>CURP *</label>
+            <input type="text" maxlength="18" [(ngModel)]="registroPaciente.curp" placeholder="PELJ950101HSR...">
+          </div>
+          <div class="form-field">
+            <label>Teléfono</label>
+            <input type="text" maxlength="10" [(ngModel)]="registroPaciente.telefono" placeholder="6441234567">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Fecha de Nacimiento</label>
+            <input type="date" [(ngModel)]="registroPaciente.fechaNacimiento">
+          </div>
+          <div class="form-field">
+            <label>Sexo</label>
+            <select [(ngModel)]="registroPaciente.sexo">
+              <option value="Masculino">Masculino</option>
+              <option value="Femenino">Femenino</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Correo Electrónico *</label>
+          <input type="email" [(ngModel)]="registroPaciente.correo" placeholder="paciente@correo.com">
+        </div>
+        <div class="form-field">
+          <label>Contraseña *</label>
+          <div class="password-wrapper">
+            <input
+              [type]="verPasswordRegistro ? 'text' : 'password'"
+              [(ngModel)]="registroPaciente.password"
+              (keyup.enter)="registrarPaciente()"
+              placeholder="Mínimo 6 caracteres">
+            <button type="button" class="toggle-eye" (click)="verPasswordRegistro = !verPasswordRegistro" [title]="verPasswordRegistro ? 'Ocultar' : 'Mostrar'">
+              <svg *ngIf="!verPasswordRegistro" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg *ngIf="verPasswordRegistro" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button class="btn-primary w-100" [disabled]="cargandoLogin" (click)="registrarPaciente()">
+          {{ cargandoLogin ? 'Creando tu cuenta...' : 'Registrarme como Paciente' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: REGISTRAR NUEVA CLÍNICA + PLAN ================= -->
+  <div class="auth-modal-overlay" *ngIf="mostrarModalRegistroClinica">
+    <div class="auth-modal-box modal-wide">
+      <div class="auth-modal-header">
+        <h3>🏥 Registrar Nueva Clínica</h3>
+        <button (click)="mostrarModalRegistroClinica = false" class="modal-close-btn">✖</button>
+      </div>
+
+      <div class="auth-modal-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label>Plan Seleccionado</label>
+            <select [(ngModel)]="registroClinica.plan">
+              <option value="Basico">Plan Básico (3 especialidades — $499/mes)</option>
+              <option value="Profesional">Plan Profesional (6 especialidades — $999/mes)</option>
+              <option value="Empresarial">Plan Empresarial (15 especialidades — $1,999/mes)</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Logo (Emoji o URL)</label>
+            <input type="text" [(ngModel)]="registroClinica.logo" placeholder="🏥">
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label>Nombre de la Clínica / Consultorio *</label>
+          <input type="text" [(ngModel)]="registroClinica.nombreClinica" placeholder="Ej. Clínica Dental Sonora">
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label>Dirección</label>
+            <input type="text" [(ngModel)]="registroClinica.direccion" placeholder="Av. Guerrero 420, Cd. Obregón">
+          </div>
+          <div class="form-field">
+            <label>Teléfono de la Clínica</label>
+            <input type="text" [(ngModel)]="registroClinica.telefono" placeholder="644 410 2030">
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label>Descripción breve</label>
+          <input type="text" [(ngModel)]="registroClinica.descripcion" placeholder="Especialistas en medicina general y odontología">
+        </div>
+
+        <hr class="modal-sep">
+        <p class="auth-hint" style="margin-bottom: 0.75rem;"><strong>Cuenta del Administrador Principal:</strong></p>
+
+        <div class="form-field">
+          <label>Nombre del Director / Admin *</label>
+          <input type="text" [(ngModel)]="registroClinica.nombreAdmin" placeholder="Dr. Carlos Méndez">
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label>Correo de Acceso *</label>
+            <input type="email" [(ngModel)]="registroClinica.correoAdmin" placeholder="admin@tuclinica.com">
+          </div>
+          <div class="form-field">
+            <label>Contraseña *</label>
+            <div class="password-wrapper">
+              <input
+                [type]="verPasswordClinica ? 'text' : 'password'"
+                [(ngModel)]="registroClinica.passwordAdmin"
+                placeholder="••••••••">
+              <button type="button" class="toggle-eye" (click)="verPasswordClinica = !verPasswordClinica" [title]="verPasswordClinica ? 'Ocultar' : 'Mostrar'">
+                <svg *ngIf="!verPasswordClinica" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg *ngIf="verPasswordClinica" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-primary w-100" [disabled]="cargandoClinica" (click)="registrarClinica()">
+          {{ cargandoClinica ? 'Creando clínica y configurando panel...' : 'Crear Clínica y Entrar al Panel' }}
         </button>
       </div>
     </div>

@@ -56,7 +56,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
     totalPacientes: 0
   };
 
-  mostrarModalConfig: boolean = false;
   activeTab: string = 'resumen';
 
   // Modos de visualización (Tarjetas vs Lista)
@@ -64,16 +63,18 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
   vistaInventario: 'tarjetas' | 'lista' = 'tarjetas';
   vistaPersonal: 'tarjetas' | 'lista' = 'tarjetas';
 
-  // Paleta de colores para diferenciar médicos en la Agenda
+  // Paleta de 10 colores fijos bien diferenciados para la Agenda
   paletaColoresAgenda: string[] = [
     '#2563eb', // Azul
     '#7c3aed', // Morado
     '#059669', // Verde
-    '#db2777', // Rosa
-    '#d97706', // Ámbar
-    '#0891b2', // Cian
     '#dc2626', // Rojo
-    '#4f46e5'  // Índigo
+    '#d97706', // Naranja
+    '#db2777', // Rosa
+    '#0891b2', // Cian
+    '#4f46e5', // Índigo
+    '#65a30d', // Lima oscuro
+    '#475569'  // Gris pizarra
   ];
   doctorFiltroAgenda: number = 0; // 0 = Todos los médicos
 
@@ -303,7 +304,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
   }
 
   private combinarCitasConOffline() {
-    // IDs de citas que ya fueron atendidas localmente en una consulta offline
     const citasCompletadasOffline = new Set(
       this.colaConsultasOffline
         .map(q => q.citaIdOriginal)
@@ -579,9 +579,14 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
   }
 
   obtenerPersonalVacio() {
-    const colorSugerido = this.paletaColoresAgenda
-      ? this.paletaColoresAgenda[(this.listaPersonal?.length || 0) % this.paletaColoresAgenda.length]
+    const coloresEnUso = new Set(
+      (this.listaPersonal || []).map(u => (u.colorAgenda || '').toLowerCase())
+    );
+    const colorDisponible = this.paletaColoresAgenda
+      ? (this.paletaColoresAgenda.find(c => !coloresEnUso.has(c.toLowerCase())) ||
+         this.paletaColoresAgenda[(this.listaPersonal?.length || 0) % this.paletaColoresAgenda.length])
       : '#2563eb';
+
     return {
       id: 0,
       nombre: '',
@@ -589,7 +594,7 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
       password: '',
       rol: 'Doctor',
       estado: 'Activo',
-      colorAgenda: colorSugerido,
+      colorAgenda: colorDisponible,
       telefono: '',
       estudios: 'Médico Cirujano',
       universidadEgreso: '',
@@ -814,54 +819,15 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
     }
   }
 
+  abrirPerfilClinica() {
+    const idClinica = this.configClinica?.id > 0 ? this.configClinica.id : 1;
+    this.router.navigate(['/clinica', idClinica]);
+  }
+
   cerrarSesion() {
     localStorage.removeItem('token_medical_staff');
     localStorage.removeItem('correo_usuario');
     this.router.navigate(['/']);
-  }
-
-  // --- CONFIGURACIÓN DE CLÍNICA (/api/Clinicas) ---
-  guardarConfiguracionClinica(nombre: string, logo: string, dir: string, tel: string) {
-    const nombreLimpio = nombre.trim();
-    if (!nombreLimpio) {
-      Swal.fire('Campo requerido', 'El nombre de la clínica es obligatorio.', 'warning');
-      return;
-    }
-
-    const payload: any = {
-      nombre: nombreLimpio,
-      logo: logo.trim() || '🏥',
-      direccion: dir.trim() || null,
-      telefono: tel.trim() || null
-    };
-
-    const peticion = this.configClinica.id > 0
-      ? this.http.put<any>(`${this.apiClinicas}/${this.configClinica.id}`, { ...payload, id: this.configClinica.id })
-      : this.http.post<any>(this.apiClinicas, payload);
-
-    peticion.subscribe({
-      next: (clinicaGuardada) => {
-        this.configClinica = {
-          id: clinicaGuardada?.id ?? this.configClinica.id,
-          nombre: payload.nombre,
-          logo: payload.logo,
-          direccion: payload.direccion || '',
-          telefono: payload.telefono || ''
-        };
-        localStorage.setItem('config_clinica_medical_staff', JSON.stringify(this.configClinica));
-        this.mostrarModalConfig = false;
-        Swal.fire({
-          title: 'Actualizado',
-          text: 'Datos de la clínica guardados correctamente.',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false
-        });
-      },
-      error: (err) => {
-        Swal.fire('Error', this.extraerMensajeError(err, 'No se pudieron guardar los datos de la clínica.'), 'error');
-      }
-    });
   }
 
   // --- FILTROS DE AGENDA (POR DÍA Y POR DOCTOR) E HISTORIAL ---
@@ -1334,7 +1300,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
     this.colaConsultasOffline.push(pendiente);
     this.guardarColasOffline();
 
-    // Si eligió fecha de próxima cita, también se agenda en la cola offline
     if (this.signosVitales.fechaProximaCita) {
       const proxCita = {
         pacienteId: Number(this.pacienteEnConsulta.id),
@@ -1360,7 +1325,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
 
     this.terminarConsulta();
 
-    // Si ya volvió el internet pero la cita origen era offline (id negativo), sincroniza enseguida
     if (!this.isOffline && navigator.onLine) {
       this.sincronizarPendientes();
     }
@@ -1372,7 +1336,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Si estamos sin internet O la cita activa es una cita offline pendiente de sincronizar
     const citaEsOffline = this.pacienteEnConsulta.citaIdActiva && Number(this.pacienteEnConsulta.citaIdActiva) < 0;
     if (this.isOffline || !navigator.onLine || citaEsOffline) {
       if (!navigator.onLine) this.isOffline = true;
@@ -1380,7 +1343,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Actualizar alergias si cambiaron
     const alergiasCambio = this.construirPayloadAlergiasSiCambio();
     if (alergiasCambio) {
       this.http.put(`${this.apiPacientes}/${alergiasCambio.pacienteId}`, alergiasCambio.payload).subscribe({
@@ -1388,7 +1350,6 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
       });
     }
 
-    // Si el paciente se atendió sin cita previa, creamos su cita de recepción en automático
     if (!this.pacienteEnConsulta.citaIdActiva) {
       const citaExpress = {
         pacienteId: this.pacienteEnConsulta.id,
@@ -1615,6 +1576,15 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
     this.mostrarModalPersonal = true;
   }
 
+  colorUsadoPorOtro(color: string): string | null {
+    const otro = this.listaPersonal.find(
+      u =>
+        u.id !== this.personalEditando.id &&
+        (u.colorAgenda || '').toLowerCase() === (color || '').toLowerCase()
+    );
+    return otro ? otro.nombre : null;
+  }
+
   guardarPersonal() {
     const esEdicion = this.personalEditando.id && this.personalEditando.id > 0;
 
@@ -1714,6 +1684,34 @@ export class DashboardClinicaComponent implements OnInit, OnDestroy {
         this.cargarDatosReales();
       },
       error: (err) => Swal.fire('Error', this.extraerMensajeError(err, 'No se pudo reactivar al usuario.'), 'error')
+    });
+  }
+
+  eliminarPersonal(user: any) {
+    if (this.isOffline || !navigator.onLine) {
+      Swal.fire('Sin conexión', 'Conéctate a internet para eliminar personal.', 'info');
+      return;
+    }
+
+    Swal.fire({
+      title: `¿Eliminar a ${user.nombre}?`,
+      text: 'Esta acción eliminará al usuario permanentemente.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Sí, eliminar'
+    }).then(r => {
+      if (r.isConfirmed) {
+        this.http.delete(`${this.apiUsuarios}/${user.id}`).subscribe({
+          next: () => {
+            Swal.fire({ title: 'Usuario eliminado', icon: 'success', timer: 1300, showConfirmButton: false });
+            this.cargarDatosReales();
+          },
+          error: (err) => {
+            Swal.fire('No se pudo eliminar', this.extraerMensajeError(err, 'Ocurrió un error al eliminar el usuario.'), 'warning');
+          }
+        });
+      }
     });
   }
 

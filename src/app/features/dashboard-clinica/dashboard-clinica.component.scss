@@ -96,23 +96,54 @@ $border: #e2e8f0;
 
   .clinic-brand {
     text-align: center;
-    margin-bottom: 2rem;
-    padding-bottom: 1.5rem;
+    margin-bottom: 1.75rem;
+    padding: 0.75rem 0.5rem 1.25rem 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
 
     .clinic-logo {
-      font-size: 3rem;
+      font-size: 2.8rem;
+      line-height: 1.1;
     }
 
     h2 {
-      margin: 0.5rem 0 0.2rem 0;
-      font-size: 1.2rem;
+      margin: 0.5rem 0 0.75rem 0;
+      font-size: 1.15rem;
     }
 
-    p {
-      margin: 0;
-      color: #94a3b8;
-      font-size: 0.85rem;
+    .btn-clinic-panel {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      width: 100%;
+      padding: 0.5rem 0.85rem;
+      border-radius: 0.55rem;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(37, 99, 235, 0.18);
+      color: #dbeafe;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+
+      svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      &:hover {
+        background: $primary;
+        border-color: $primary;
+        color: #ffffff;
+        transform: translateY(-1px);
+      }
     }
   }
 
@@ -156,9 +187,17 @@ $border: #e2e8f0;
   .user-profile {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    justify-content: space-between;
+    gap: 0.75rem;
     padding-top: 1rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+
+    .user-profile-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+    }
 
     .avatar {
       width: 40px;
@@ -169,19 +208,54 @@ $border: #e2e8f0;
       align-items: center;
       justify-content: center;
       font-weight: bold;
+      flex-shrink: 0;
     }
 
     .info {
       display: flex;
       flex-direction: column;
+      min-width: 0;
 
       strong {
-        font-size: 0.95rem;
+        font-size: 0.9rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       span {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         color: #94a3b8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .btn-logout {
+      width: 36px;
+      height: 36px;
+      border-radius: 0.55rem;
+      border: 1px solid rgba(248, 113, 113, 0.28);
+      background: rgba(239, 68, 68, 0.14);
+      color: #fca5a5;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.15s;
+
+      svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      &:hover {
+        background: #dc2626;
+        border-color: #dc2626;
+        color: #ffffff;
+        transform: translateY(-1px);
       }
     }
   }
@@ -230,6 +304,42 @@ $border: #e2e8f0;
   .content-area {
     padding: 2rem;
     position: relative;
+  }
+}
+
+.mobile-top-actions {
+  gap: 0.45rem;
+}
+
+.btn-mobile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  height: 34px;
+  padding: 0 0.65rem;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  &.clinic {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+  }
+
+  &.logout {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    padding: 0 0.5rem;
   }
 }
 
@@ -1380,6 +1490,219 @@ $border: #e2e8f0;
   font-size: 1rem;
 }
 
+/* ================= ESTILOS OFFLINE, COLORES Y MODO LISTA ================= */
+.connection-banner {
+  padding: 0.7rem 1rem;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+
+  &.offline {
+    background: #dc2626;
+    color: #ffffff;
+  }
+
+  &.syncing {
+    background: #2563eb;
+    color: #ffffff;
+  }
+
+  .banner-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+  }
+}
+
+.btn-sync {
+  &.btn-sync-offline {
+    background: #fef2f2 !important;
+    color: #dc2626 !important;
+    border-color: #fca5a5 !important;
+  }
+
+  &.btn-sync-working {
+    background: #eff6ff !important;
+    color: #2563eb !important;
+    border-color: #93c5fd !important;
+  }
+
+  &.btn-sync-pending {
+    background: #fffbeb !important;
+    color: #d97706 !important;
+    border-color: #fcd34d !important;
+  }
+}
+
+.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+
+  &.pending {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+  }
+
+  &.synced {
+    background: #d1fae5;
+    color: #065f46;
+  }
+}
+
+.row-pending-sync {
+  background: #fffbeb !important;
+}
+
+.cita-offline-card {
+  background: #fffbeb !important;
+  border: 1px dashed #f59e0b;
+}
+
+.clock-pulse {
+  display: inline-block;
+  animation: pulseClock 1.4s infinite ease-in-out;
+}
+
+@keyframes pulseClock {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.1);
+  }
+}
+
+.doctor-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.doctor-legend {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+
+  .legend-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &.active {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-width: 2px;
+      border-color: #2563eb;
+    }
+  }
+}
+
+.event-pill {
+  &.pill-cancelada {
+    opacity: 0.5;
+    text-decoration: line-through;
+  }
+
+  &.pill-offline {
+    border: 1px dashed rgba(255, 255, 255, 0.9);
+  }
+}
+
+.table-scroll {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+
+  &.pill-optimo {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  &.pill-critico {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+}
+
+/* PALETA DE 10 COLORES FIJOS EN PERSONAL */
+.color-palette-picker {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.6rem;
+  max-width: 260px;
+
+  .color-swatch {
+    width: 40px;
+    height: 40px;
+    border-radius: 0.6rem;
+    border: 2px solid transparent;
+    cursor: pointer;
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s, box-shadow 0.15s;
+
+    &:hover {
+      transform: scale(1.08);
+    }
+
+    &.selected {
+      border-color: #0f172a;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+      transform: scale(1.08);
+    }
+
+    &.in-use:not(.selected) {
+      opacity: 0.45;
+    }
+  }
+}
+
 /* ================= MEJORAS RESPONSIVAS (MÓVIL Y TABLET) ================= */
 .dashboard-wrapper,
 .dashboard-wrapper * {
@@ -1577,7 +1900,7 @@ $border: #e2e8f0;
   }
 
   /* Vista 3: Consulta y Hoja de Receta */
-  .seleccion-paciente .toolbar>div {
+  .seleccion-paciente .toolbar > div {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 0.75rem !important;
@@ -1588,7 +1911,7 @@ $border: #e2e8f0;
     align-items: stretch !important;
     gap: 0.6rem !important;
 
-    >div {
+    > div {
       margin-left: 0 !important;
       flex-direction: column !important;
       width: 100%;
@@ -1648,7 +1971,7 @@ $border: #e2e8f0;
         }
       }
 
-      .treatment-column>div[style*="display: flex"] {
+      .treatment-column > div[style*="display: flex"] {
         flex-direction: column !important;
         gap: 0.75rem !important;
       }
@@ -1678,7 +2001,7 @@ $border: #e2e8f0;
       flex-direction: column;
       align-items: stretch;
 
-      >div {
+      > div {
         flex-direction: column !important;
         align-items: stretch !important;
         width: 100%;
@@ -1713,7 +2036,7 @@ $border: #e2e8f0;
     flex-direction: column;
     align-items: stretch;
 
-    >div {
+    > div {
       flex-direction: column !important;
       align-items: stretch !important;
       width: 100%;
@@ -1761,12 +2084,12 @@ $border: #e2e8f0;
       .modal-body {
         padding: 1rem 1.25rem;
 
-        >div[style*="display: flex"] {
+        > div[style*="display: flex"] {
           flex-direction: column !important;
           gap: 0.5rem !important;
         }
 
-        >div[style*="grid-template-columns: repeat(4"] {
+        > div[style*="grid-template-columns: repeat(4"] {
           grid-template-columns: repeat(2, 1fr) !important;
         }
       }
@@ -1776,7 +2099,6 @@ $border: #e2e8f0;
 
 /* MEDIA QUERY PARA IMPRESIÓN REAL */
 @media print {
-
   .sidebar,
   .top-bar,
   .no-print {

@@ -5,6 +5,7 @@ import { PerfilClinica } from './perfil-clinica/perfil-clinica';
 
 export const routes: Routes = [
   { path: 'dashboard', component: DashboardClinicaComponent },
+  { path: 'clinica', component: PerfilClinica },
   { path: 'clinica/:id', component: PerfilClinica },
   { path: '', component: InicioComponent },
 
